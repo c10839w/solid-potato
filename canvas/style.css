@@ -295,3 +295,28 @@ select {
   font-size: 12px;
   line-height: 1.7;
 }
+
+/* ---------- 导出结果提示 ---------- */
+.toast {
+  position: fixed;
+  right: 20px;
+  bottom: 46px;
+  max-width: 440px;
+  white-space: pre-line;
+  background: #fff;
+  border: 1px solid #E3E1DB;
+  border-left: 3px solid #2F7D5B;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: #2C2C2A;
+  box-shadow: 0 6px 20px rgba(0,0,0,.08);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .18s, transform .18s;
+  pointer-events: none;
+  z-index: 50;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.err { border-left-color: #C0503C; }

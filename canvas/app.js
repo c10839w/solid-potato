@@ -93,6 +93,7 @@ function bindUI() {
   $('btnSave').addEventListener('click', () => save(true));
   $('btnPrelabel').addEventListener('click', () => prelabel([S.cur && S.cur.image].filter(Boolean)));
   $('btnPrelabelAll').addEventListener('click', () => prelabel([]));
+  $('btnExport').addEventListener('click', doExport);
 }
 
 function refreshTips() {
@@ -462,6 +463,47 @@ async function prelabel(names) {
   status(`开始预标注 ${res.total} 张，请稍等……`);
   $('progress').style.display = 'flex';
   pollProgress();
+}
+
+/* ---------------------------------------------------------------- 导出数据集 */
+function toast(text, isErr) {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('show'), 8000);
+}
+
+async function doExport() {
+  status('正在导出……');
+  let res;
+  try {
+    res = await (await fetch('/api/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ val_ratio: 0.2 }),
+    })).json();
+  } catch (e) {
+    status('导出失败：' + e);
+    return;
+  }
+  if (!res.ok) {
+    status(res.message || '导出失败');
+    toast(res.message || '导出失败', true);
+    return;
+  }
+  const hit = Object.entries(res.per_class).filter(([, c]) => c > 0)
+    .map(([n, c]) => `${n} ${c}`).join('，');
+  const miss = Object.entries(res.per_class).filter(([, c]) => c === 0).map(([n]) => n);
+  toast(`导出完成　${res.images_total} 张（训练 ${res.train} / 验证 ${res.val}）\n`
+    + `物体 ${res.objects} 个　用时 ${res.seconds} 秒\n${hit}`
+    + (miss.length ? `\n还没标到：${miss.join('，')}` : '')
+    + `\n→ D:\\imglabel\\dataset`);
+  status(`导出完成：${res.images_total} 张 / ${res.objects} 个物体`);
 }
 
 async function pollProgress() {

@@ -51,6 +51,11 @@ def prelabel_seg(img_path, model_path="yolo26n-seg.pt", conf=0.25):
         verbose=False,
     )[0]
 
+    return objects_from_result(result)
+
+
+def objects_from_result(result):
+    """把 ultralytics 的预测结果转成我们的物体列表（界面和脚本共用这一份逻辑）"""
     objs = []
     if result.masks is None:          # 一张图里一个目标都没认出来
         return objs

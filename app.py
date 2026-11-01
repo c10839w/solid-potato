@@ -190,19 +190,13 @@ def _prelabel_worker(names):
             try:
                 r = model.predict(str(img), conf=0.25,
                                   classes=P.COCO_IDS, verbose=False)[0]
-                objs = []
-                if r.masks is not None:
-                    for poly, cls, score in zip(r.masks.xy, r.boxes.cls.tolist(), r.boxes.conf.tolist()):
-                        if len(poly) < 3:
-                            continue
-                        pts = [[float(x), float(y)] for x, y in poly]
-                        objs.append({
-                            "id": f"o{i}_{k}",
-                            "class_id": P.COCO_TO_OURS[int(cls)],
-                            "polygon": pts,
-                            "conf": round(float(score), 3),
-                            "source": "model",
-                        })
+                objs = [{
+                    "id": f"o{i}_{k}",
+                    "class_id": o["class_id"],
+                    "polygon": o["polygon"],
+                    "conf": o["conf"],
+                    "source": "model",
+                } for k, o in enumerate(P.objects_from_result(r))]
                 save_annotation({"image": name, "width": w, "height": h, "objects": objs})
             except Exception as e:
                 set_progress(message=f"{name} 失败：{e}")
@@ -231,6 +225,19 @@ def api_prelabel():
 @app.route("/api/progress")
 def api_progress():
     return jsonify(PROGRESS)
+
+
+# ---------------------------------------------------------------- 导出数据集
+@app.route("/api/export", methods=["POST"])
+def api_export():
+    """把当前所有标好的图导成标准数据集（YOLO txt + 实例掩码 + 语义图）"""
+    body = request.get_json(silent=True) or {}
+    try:
+        import export as E
+        report = E.export(val_ratio=float(body.get("val_ratio", 0.2)))
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"导出失败：{type(e).__name__}: {e}"})
+    return jsonify(report)
 
 
 # ---------------------------------------------------------------- 启动
