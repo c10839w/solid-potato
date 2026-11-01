@@ -1,0 +1,28 @@
+# 权重文件太大，不进 Git（任务书要求排除）
+*.pt
+weights/
+*.part
+
+# 例外：自己训练出来的 best.pt 要跟着源码走，必须提交
+!model/best.pt
+
+# 选图时下的临时候选图
+data/_cand/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 原始图片压缩包
+data/raw/*.zip
+data/raw/*.tar.gz
+
+# 运行时产物
+data/preview/
+records/annotations/
+records/drafts/
+records/fixes.jsonl
+
+# 训练输出
+runs/
+dataset/

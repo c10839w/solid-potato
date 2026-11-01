@@ -1,0 +1,10 @@
+# 核心依赖（任务书指定三项）
+ultralytics
+flask
+psutil
+
+# 附加：YOLO-World 做开放词表检测时需要，否则 set_classes 会报 No module named 'clip'
+openai-clip
+
+# 安装命令（清华源，国内快）：
+#   pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
