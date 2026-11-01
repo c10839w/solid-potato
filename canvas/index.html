@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>人机协同图像标注系统</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="side-head">
+      <span>图片</span>
+      <span class="muted" id="imgCount">0 张</span>
+    </div>
+    <ul class="img-list" id="imgList"></ul>
+  </aside>
+
+  <main class="main">
+    <header class="toolbar">
+      <div class="modes" id="modes">
+        <button class="mode" data-mode="det">目标检测</button>
+        <button class="mode active" data-mode="seg">实例分割</button>
+        <button class="mode" data-mode="sem">语义分割</button>
+      </div>
+      <div class="spacer"></div>
+      <button id="btnAdd" class="btn">新增物体</button>
+      <button id="btnPrelabel" class="btn">预标注本张</button>
+      <button id="btnPrelabelAll" class="btn">预标注全部</button>
+      <button id="btnSave" class="btn primary">保存</button>
+    </header>
+
+    <div class="stage" id="stage">
+      <canvas id="cv"></canvas>
+      <div class="hint" id="hint">左侧选一张图开始</div>
+      <div class="progress" id="progress" style="display:none">
+        <div class="bar"><i id="barFill"></i></div>
+        <span id="progressText"></span>
+      </div>
+    </div>
+
+    <footer class="statusbar">
+      <span id="status">—</span>
+      <span class="spacer"></span>
+      <span id="fixInfo" class="muted">修正记录 0 条</span>
+    </footer>
+  </main>
+
+  <aside class="panel">
+    <div class="panel-block">
+      <h3>当前物体</h3>
+      <div id="objBox" class="muted">没有选中物体</div>
+      <div class="row" id="classRow" style="display:none">
+        <label>类别</label>
+        <select id="classSel"></select>
+      </div>
+      <div class="row" id="delRow" style="display:none">
+        <button id="btnDel" class="btn danger">删除这个物体</button>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <h3>物体列表</h3>
+      <ul class="obj-list" id="objList"></ul>
+    </div>
+
+    <div class="panel-block">
+      <h3>操作说明</h3>
+      <ul class="tips" id="tips"></ul>
+    </div>
+  </aside>
+
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
