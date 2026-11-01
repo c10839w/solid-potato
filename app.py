@@ -31,6 +31,10 @@ app = Flask(__name__, static_folder=str(ROOT / "canvas"), static_url_path="/stat
 
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
+# 预标注用哪个模型：默认用通用的 yolo26n-seg；
+# 自己训练出 model/best.pt 之后，用 python app.py --model model/best.pt 切换（第二轮）
+MODEL_PATH = ROOT / "yolo26n-seg.pt"
+
 # ---------------------------------------------------------------- 模型（全局只加载一次）
 _model = None
 _model_lock = threading.Lock()
@@ -42,7 +46,7 @@ def get_model():
     with _model_lock:
         if _model is None:
             from ultralytics import YOLO
-            _model = YOLO(str(ROOT / "yolo26n-seg.pt"))
+            _model = YOLO(str(MODEL_PATH))
         return _model
 
 
@@ -241,17 +245,30 @@ def api_export():
 
 
 # ---------------------------------------------------------------- 启动
-def open_browser_later():
+def open_browser_later(port=5000):
     import webbrowser
     time.sleep(1.2)
-    webbrowser.open("http://127.0.0.1:5000")
+    webbrowser.open(f"http://127.0.0.1:{port}")
 
 
 if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default=None,
+                    help="预标注用的权重，默认 yolo26n-seg.pt；第二轮填 model/best.pt")
+    ap.add_argument("--port", type=int, default=5000)
+    args = ap.parse_args()
+    if args.model:
+        MODEL_PATH = (ROOT / args.model) if not Path(args.model).is_absolute() else Path(args.model)
+        if not MODEL_PATH.exists():
+            raise SystemExit(f"找不到模型文件：{MODEL_PATH}")
+
     print("=" * 56)
     print("  人机协同图像标注系统  已启动")
-    print("  浏览器地址：http://127.0.0.1:5000")
+    print(f"  预标注模型：{MODEL_PATH.name}")
+    print(f"  浏览器地址：http://127.0.0.1:{args.port}")
     print("  关闭这个黑窗口即停止运行")
     print("=" * 56)
-    threading.Thread(target=open_browser_later, daemon=True).start()
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    threading.Thread(target=lambda: open_browser_later(args.port), daemon=True).start()
+    app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
