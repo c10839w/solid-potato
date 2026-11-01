@@ -6,8 +6,9 @@ weights/
 # 例外：自己训练出来的 best.pt 要跟着源码走，必须提交
 !model/best.pt
 
-# 选图时下的临时候选图
+# 选图时下的临时候选图与 COCO 标注缓存（都能用 fetch_coco.py 重新生成）
 data/_cand/
+data/_cache/
 
 # Python 缓存
 __pycache__/
@@ -19,9 +20,10 @@ data/raw/*.tar.gz
 
 # 运行时产物
 data/preview/
-records/annotations/
 records/drafts/
-records/fixes.jsonl
+
+# 刻意不忽略：records/annotations/ 与 records/fixes.jsonl
+# 这两样是「人工标注成果」和「修正流水账」，是评分要看的东西，必须进仓库
 
 # 训练输出
 runs/

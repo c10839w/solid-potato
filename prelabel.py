@@ -36,14 +36,25 @@ def _bbox_from_polygon(poly):
     return [min(xs), min(ys), max(xs), max(ys)]
 
 
+_MODELS = {}
+
+
+def load_model(model_path="yolo26n-seg.pt"):
+    """加载模型并缓存。加载一次约 5~10 秒，批量处理时必须复用同一个。"""
+    from ultralytics import YOLO
+
+    key = str(model_path)
+    if key not in _MODELS:
+        _MODELS[key] = YOLO(key)
+    return _MODELS[key]
+
+
 def prelabel_seg(img_path, model_path="yolo26n-seg.pt", conf=0.25):
     """
     用实例分割模型画草稿：得到「轮廓」，框再由轮廓派生。
     返回 [{'class_id': 0, 'polygon': [[x,y],...], 'bbox': [x1,y1,x2,y2], 'conf': 0.93}, ...]
     """
-    from ultralytics import YOLO
-
-    model = YOLO(str(model_path))
+    model = load_model(model_path)
     result = model.predict(
         str(img_path),
         conf=conf,
