@@ -2,18 +2,53 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>人机协同图像标注系统</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>标注工作台 · 人机协同图像标注系统</title>
+<link rel="stylesheet" href="/static/scrapbook.css">
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="workbench">
+
+<nav class="nav compact">
+  <div class="brand"><span class="win-dots"><i></i><i></i><i></i></span> 标注手帐</div>
+  <div class="nav-links">
+    <a href="/">首页</a>
+    <a href="/workbench" class="on">标注工作台</a>
+    <a href="/gallery">照片墙</a>
+    <a href="/report">对比报告</a>
+  </div>
+</nav>
+
 <div class="app">
 
   <aside class="sidebar">
-    <div class="side-head">
-      <span>图片</span>
-      <span class="muted" id="imgCount">0 张</span>
-      <button id="btnUpload" class="btn mini" title="上传一张新照片，上传后自动识别">＋ 上传识别</button>
+    <div class="up-box">
+      <button id="btnUpload" class="btn primary upload">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M8 11V3M4.5 6.5L8 3l3.5 3.5"/><path d="M2.5 11.5v1.5h11v-1.5"/>
+        </svg>
+        上传照片并识别
+      </button>
       <input type="file" id="fileUpload" accept="image/*" hidden>
+      <label class="cat-pick">
+        照片类别
+        <select id="catSel">
+          <option>客厅</option><option>卧室</option><option>餐厅</option>
+          <option>书房</option><option>其他</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="side-head">
+      <span>照片</span>
+      <span class="muted" id="imgCount">0 张</span>
+    </div>
+    <div class="chips" id="chips">
+      <button class="chipbtn on" data-cat="all">全部</button>
+      <button class="chipbtn" data-cat="客厅">客厅</button>
+      <button class="chipbtn" data-cat="卧室">卧室</button>
+      <button class="chipbtn" data-cat="餐厅">餐厅</button>
+      <button class="chipbtn" data-cat="书房">书房</button>
     </div>
     <ul class="img-list" id="imgList"></ul>
   </aside>
@@ -29,14 +64,14 @@
       <button id="btnAdd" class="btn">新增物体</button>
       <button id="btnPrelabel" class="btn">预标注本张</button>
       <button id="btnPrelabelAll" class="btn">预标注全部</button>
+      <button id="btnExportImg" class="btn">导出标注照片</button>
       <button id="btnExport" class="btn">导出数据集</button>
-      <a class="btn" href="/compare" target="_blank" title="改造前后精度对比与第二轮回标结果">对比报告</a>
       <button id="btnSave" class="btn primary">保存</button>
     </header>
 
     <div class="stage" id="stage">
       <canvas id="cv"></canvas>
-      <div class="hint" id="hint">左侧选一张图开始</div>
+      <div class="hint" id="hint">左侧选一张照片开始；或用上方「上传照片并识别」</div>
       <div class="progress" id="progress" style="display:none">
         <div class="bar"><i id="barFill"></i></div>
         <span id="progressText"></span>

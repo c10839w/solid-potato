@@ -34,14 +34,28 @@ python app.py --lan                   # 允许同一 WiFi 下的手机/别的电
 python app.py --port 5001             # 5000 被占用时换端口
 ```
 
+**四个页面**
+
+| 地址 | 页面 | 干什么 |
+|---|---|---|
+| `/` | 封面 | 介绍 + 一排真实数字 + 「上传一张照片，开始标注」 |
+| `/workbench` | 标注工作台 | 三模式画布、预标注、拖拽修正、导出数据集 |
+| `/gallery` | 照片墙 | 所有标过的照片（标注已画在图上），按类别筛，可导出 |
+| `/report` | 对比报告 | 改造前后精度、第二轮回标结果（`records/compare.html`） |
+
+![封面](screenshots/01-封面.jpg)
+![工作台](screenshots/02-工作台.jpg)
+![照片墙](screenshots/03-照片墙.jpg)
+
 **界面上的按钮**
 
 | 按钮 | 作用 |
 |---|---|
-| ＋ 上传识别 | 选一张新照片（手机拍的也行），上传后自动压缩到长边 960 并立刻跑模型识别 |
+| 上传照片并识别（左栏最上面，粉色大按钮） | 选一张新照片（手机拍的也行），先选「照片类别」，上传后自动压缩到长边 960 并立刻跑模型识别 |
+| 导出标注照片 | 把标注画在照片上，连同名 json 一起打包成 `标注照片.zip` 下载 |
 | 预标注本张 / 预标注全部 | 用当前模型给已有图片画草稿 |
 | 导出数据集 | 把标注导出成 YOLO 数据集（检测 + 分割 + 两种掩码） |
-| 对比报告 | 打开改造前后的精度对比与第二轮回标结果（`records/compare.html`） |
+| 照片类别（下拉框） | 客厅 / 卧室 / 餐厅 / 书房 / 其他；照片墙按它筛选 |
 
 ## 二、环境依赖
 
@@ -64,7 +78,9 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 | `fetch_coco.py` | 从 COCO val2017 批量下载**含十类物体的室内图**（按标注筛选，非随机） |
 | `prelabel_all.py` | 批量预标注：给 `data/raw` 里每张图生成一份草稿，不用开网页 |
 | `classes.yaml` | 十类词表 + COCO 编号映射（**全流程唯一的类别顺序来源**） |
-| `canvas/` | 网页界面：`index.html` / `style.css` / `app.js` |
+| `canvas/` | 网页界面：`cover.html`（封面）/ `index.html`（工作台）/ `gallery.html`（照片墙）+ 样式与脚本 |
+| `canvas/scrapbook.css` | 全站风格（手帐风）：颜色、虚线卡片、胶带、按钮 |
+| `screenshots/` | 界面截图（README 与答辩用） |
 | `data/raw/` | 原始图片（只放图，不放别的） |
 | `data/preview/` | 预标注结果可视化 |
 | `records/drafts/` | 模型草稿（json） |

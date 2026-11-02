@@ -127,10 +127,147 @@ def count_fixes():
         return sum(1 for line in f if line.strip())
 
 
+# ---------------------------------------------------------------- 照片类别（客厅/卧室/餐厅/书房/其他）
+CAT_FILE = ROOT / "records" / "categories.json"
+CAT_ZH = ["客厅", "卧室", "餐厅", "书房", "其他"]
+_cats = None
+
+
+def _guess_category(objs):
+    """没人工指定时，按图里有什么物体猜一个类别（只用于照片墙分类，不影响标注）"""
+    ids = {o.get("class_id") for o in objs}
+    if 9 in ids:                 # bed
+        return "卧室"
+    if 2 in ids:                 # dining table
+        return "餐厅"
+    if 5 in ids and 1 in ids:    # laptop + chair
+        return "书房"
+    if 3 in ids or 4 in ids:     # couch / tv
+        return "客厅"
+    return "其他"
+
+
+def load_categories():
+    """文件名 -> 类别。第一次运行时按标注内容猜一遍，之后以 json 为准。"""
+    global _cats
+    if _cats is not None:
+        return _cats
+    if CAT_FILE.exists():
+        try:
+            _cats = json.loads(CAT_FILE.read_text(encoding="utf-8"))
+            return _cats
+        except Exception:
+            pass
+    _cats = {}
+    for p in ANN_DIR.glob("*.json"):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        _cats[d.get("image") or (p.stem + ".jpg")] = _guess_category(d.get("objects", []))
+    save_categories()
+    return _cats
+
+
+def save_categories():
+    CAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    CAT_FILE.write_text(json.dumps(_cats or {}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def set_category(name, cat):
+    load_categories()
+    if cat in CAT_ZH:
+        _cats[name] = cat
+        save_categories()
+    return _cats.get(name, "其他")
+
+
+# ---------------------------------------------------------------- 把标注画到照片上
+# 和画布 app.js 里的 PALETTE 保持一致，导出的图和界面看起来是一套
+PALETTE = [(226, 75, 74), (55, 138, 221), (99, 153, 34), (239, 159, 39), (127, 119, 221),
+           (29, 158, 117), (212, 83, 126), (186, 117, 23), (136, 135, 128), (12, 68, 124)]
+
+_FONTS = {}
+
+
+def _font(size):
+    from PIL import ImageFont
+    if size in _FONTS:
+        return _FONTS[size]
+    ft = None
+    for name in ("msyh.ttc", "msyhbd.ttc", "simhei.ttf", "arial.ttf"):
+        try:
+            ft = ImageFont.truetype(name, size)
+            break
+        except Exception:
+            continue
+    _FONTS[size] = ft or ImageFont.load_default()
+    return _FONTS[size]
+
+
+def render_annotated(img_path, ann, max_w=None):
+    """把多边形轮廓 + 类别标签画到照片上，返回 JPEG 字节（不落盘）"""
+    import io
+    from PIL import Image, ImageDraw
+
+    im = Image.open(img_path).convert("RGB")
+    if max_w and im.width > max_w:
+        im = im.resize((max_w, max(1, round(im.height * max_w / im.width))), Image.LANCZOS)
+
+    base_w = ann.get("width") or im.width
+    s = im.width / float(base_w)
+
+    overlay = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(overlay)
+    fs = max(11, round(13 * min(1.0, s) * 1.2))
+    font = _font(fs)
+
+    for ob in ann.get("objects", []):
+        poly = ob.get("polygon") or []
+        if len(poly) < 3:
+            continue
+        cid = int(ob.get("class_id", 0)) % len(PALETTE)
+        r, g, b = PALETTE[cid]
+        pts = [(p[0] * s, p[1] * s) for p in poly]
+        d.polygon(pts, fill=(r, g, b, 44))
+        d.line(pts + [pts[0]], fill=(r, g, b, 255), width=max(2, round(2 * max(s, .6))), joint="curve")
+
+        # 类别标签（贴在框的左上角）
+        label = P.ZH[cid] if cid < len(P.ZH) else str(cid)
+        x1 = min(p[0] for p in pts)
+        y1 = min(p[1] for p in pts)
+        try:
+            tw = d.textlength(label, font=font)
+        except Exception:
+            tw = fs * len(label)
+        th = fs + 6
+        ty = max(0, y1 - th)
+        d.rectangle([x1, ty, x1 + tw + 10, ty + th], fill=(r, g, b, 235))
+        d.text((x1 + 5, ty + 2), label, font=font, fill=(255, 255, 255, 255))
+
+    out = Image.alpha_composite(im.convert("RGBA"), overlay).convert("RGB")
+    buf = io.BytesIO()
+    out.save(buf, "JPEG", quality=86)
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------- 页面
 @app.route("/")
 def index():
+    """封面页：介绍 + 上传入口"""
+    return send_from_directory(app.static_folder, "cover.html")
+
+
+@app.route("/workbench")
+def workbench():
+    """标注工作台（原来的单页界面）"""
     return send_from_directory(app.static_folder, "index.html")
+
+
+@app.route("/gallery")
+def gallery():
+    """照片墙：看所有标过的照片，可导出"""
+    return send_from_directory(app.static_folder, "gallery.html")
 
 
 @app.route("/api/config")
@@ -153,14 +290,44 @@ def count_objects(name):
 
 @app.route("/api/images")
 def api_images():
-    """图片列表 + 每张的标注状态"""
+    """图片列表 + 每张的标注状态 + 照片类别"""
+    cats = load_categories()
     items = []
     for p in sorted(RAW_DIR.iterdir()):
         if p.suffix.lower() not in IMG_EXTS:
             continue
         n_obj, n_human = count_objects(p.name)
-        items.append({"name": p.name, "objects": n_obj, "human": n_human})
+        items.append({"name": p.name, "objects": n_obj, "human": n_human,
+                      "category": cats.get(p.name, "其他")})
     return jsonify({"images": items, "fixes": count_fixes()})
+
+
+@app.route("/api/stats")
+def api_stats():
+    """封面页用的一排数字"""
+    cats = load_categories()
+    n_img = n_obj = n_human_img = 0
+    for p in sorted(RAW_DIR.iterdir()):
+        if p.suffix.lower() not in IMG_EXTS:
+            continue
+        n_img += 1
+        o, h = count_objects(p.name)
+        n_obj += o
+        if h > 0:
+            n_human_img += 1
+    return jsonify({"images": n_img, "objects": n_obj,
+                    "human_images": n_human_img, "fixes": count_fixes(),
+                    "categories": cats and len(cats) or 0})
+
+
+@app.route("/api/category", methods=["POST"])
+def api_category():
+    """改某张照片的类别（工作台右上角那个下拉框）"""
+    body = request.get_json(force=True) or {}
+    name, cat = body.get("name"), body.get("category")
+    if not name or not cat:
+        return jsonify({"ok": False, "message": "缺少参数"}), 400
+    return jsonify({"ok": True, "category": set_category(name, cat)})
 
 
 @app.route("/api/img/<path:name>")
@@ -170,7 +337,9 @@ def api_img(name):
 
 @app.route("/api/annotation/<path:name>")
 def api_get_ann(name):
-    return jsonify(load_annotation(name))
+    d = load_annotation(name)
+    d["category"] = load_categories().get(name, "其他")
+    return jsonify(d)
 
 
 @app.route("/api/annotation/<path:name>", methods=["POST"])
@@ -178,7 +347,10 @@ def api_post_ann(name):
     data = request.get_json(force=True)
     data["image"] = name
     fixes = data.pop("_fixes", [])      # 先把修正记录摘出来，别写进标注文件
+    cat = data.pop("category", None)    # 类别单独存，不混进标注文件
     save_annotation(data)
+    if cat:
+        set_category(name, cat)
     log_fixes(fixes)
     return jsonify({"ok": True, "fixes": count_fixes()})
 
@@ -229,6 +401,7 @@ def api_prelabel():
 
 
 @app.route("/compare")
+@app.route("/report")
 def compare_page():
     """前后对比报告（make_report.py 生成）：改造前 vs 改造后的精度、第二轮回标修正量"""
     if not REPORT.exists():
@@ -252,6 +425,60 @@ def api_report():
 @app.route("/api/progress")
 def api_progress():
     return jsonify(PROGRESS)
+
+
+# ---------------------------------------------------------------- 看标注结果 / 导出照片
+@app.route("/api/thumb/<path:name>")
+def api_thumb(name):
+    """返回「画好标注的照片」缩略图，照片墙和预览都用它"""
+    img = RAW_DIR / name
+    if not img.exists():
+        return ("没有这张图", 404)
+    w = request.args.get("w", type=int) or 640
+    ann = load_annotation(name)
+    try:
+        data = render_annotated(img, ann, max_w=w)
+    except Exception as e:
+        return (f"渲染失败：{type(e).__name__}: {e}", 500)
+    return send_file(__import__("io").BytesIO(data), mimetype="image/jpeg")
+
+
+@app.route("/api/export_images", methods=["POST"])
+def api_export_images():
+    """把已标注的照片烧上框和标签，连同名 json 一起打包成 zip 下载"""
+    import io
+    import zipfile
+
+    names = []
+    for p in sorted(RAW_DIR.iterdir()):
+        if p.suffix.lower() not in IMG_EXTS:
+            continue
+        ann = load_annotation(p.name)
+        if ann.get("objects"):
+            names.append((p, ann))
+    if not names:
+        return jsonify({"ok": False, "message": "还没有标注过的照片"}), 400
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for p, ann in names:
+            try:
+                z.writestr(f"标注照片/{p.stem}.jpg", render_annotated(p, ann))
+            except Exception:
+                continue
+            z.writestr(f"标注照片/{p.stem}.json",
+                       json.dumps(ann, ensure_ascii=False, indent=2))
+        z.writestr("说明.txt",
+                   f"人机协同图像标注系统 · 标注照片导出\n"
+                   f"共 {len(names)} 张，时间 {time.strftime('%Y-%m-%d %H:%M')}\n"
+                   f"每张 jpg 是把标注画在照片上的样子，同名 json 是原始标注数据。\n"
+                   f"类别：{'/'.join(P.ZH)}\n")
+
+    buf.seek(0)
+    resp = send_file(buf, mimetype="application/zip",
+                     as_attachment=True, download_name="标注照片.zip")
+    resp.headers["X-Image-Count"] = str(len(names))
+    return resp
 
 
 # ---------------------------------------------------------------- 导出数据集
@@ -297,7 +524,10 @@ def api_upload():
         img = img.resize((round(w * 960 / mx), round(h * 960 / mx)))
     img.save(dst, "JPEG", quality=85)
 
-    return jsonify({"ok": True, "name": dst.name,
+    cat = request.form.get("category") or "其他"
+    set_category(dst.name, cat)
+
+    return jsonify({"ok": True, "name": dst.name, "category": cat,
                     "width": img.size[0], "height": img.size[1],
                     "message": f"已上传 {dst.name}"})
 

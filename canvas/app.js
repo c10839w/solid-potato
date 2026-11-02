@@ -17,6 +17,7 @@ const S = {
   newClass: 0,
   fixes: [],          // 还没提交的修正记录
   dirty: false,
+  cat: 'all',         // 左侧照片类别筛选：all / 客厅 / 卧室 ...
 };
 
 const cv = document.getElementById('cv');
@@ -57,6 +58,17 @@ async function init() {
   bindUI();
   await loadImages();
   refreshTips();
+
+  // 从封面页上传后跳过来：?pick=文件名 → 自动选中并跑一遍模型
+  const pick = new URLSearchParams(location.search).get('pick');
+  if (pick) {
+    const i = S.images.findIndex(it => it.name === pick);
+    if (i >= 0) {
+      await selectImage(i);
+      status(`${pick} 已就绪，正在识别……`);
+      prelabel([pick]);
+    }
+  }
 }
 
 function bindUI() {
@@ -96,6 +108,30 @@ function bindUI() {
   $('btnExport').addEventListener('click', doExport);
   $('btnUpload').addEventListener('click', () => $('fileUpload').click());
   $('fileUpload').addEventListener('change', uploadImage);
+  $('btnExportImg').addEventListener('click', exportImages);
+
+  // 左侧类别筛选
+  $('chips').addEventListener('click', e => {
+    const b = e.target.closest('.chipbtn');
+    if (!b) return;
+    S.cat = b.dataset.cat;
+    document.querySelectorAll('#chips .chipbtn').forEach(x => x.classList.toggle('on', x === b));
+    renderImageList();
+  });
+
+  // 改这张照片的类别（客厅/卧室/…），立刻存到服务端，照片墙的筛选就靠它
+  $('catSel').addEventListener('change', async e => {
+    if (!S.cur) return;
+    const cat = e.target.value;
+    S.cur.category = cat;
+    if (S.idx >= 0 && S.images[S.idx]) S.images[S.idx].category = cat;
+    renderImageList();
+    await fetch('/api/category', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: S.cur.image, category: cat }),
+    });
+    status(`已把这张归到「${cat}」`);
+  });
 }
 
 function refreshTips() {
@@ -136,10 +172,16 @@ async function loadImages() {
 
 function renderImageList() {
   const ul = $('imgList');
-  $('imgCount').textContent = S.images.length + ' 张';
-  ul.innerHTML = S.images.map((it, i) => {
+  const rows = S.images
+    .map((it, i) => ({ it, i }))
+    .filter(({ it }) => S.cat === 'all' || (it.category || '其他') === S.cat);
+
+  $('imgCount').textContent = rows.length + ' / ' + S.images.length + ' 张';
+  ul.innerHTML = rows.map(({ it, i }) => {
     const cls = it.human > 0 ? 'human' : (it.objects > 0 ? 'has' : '');
-    const meta = it.objects > 0 ? `${it.objects} 个物体` : '未标注';
+    const meta = it.objects > 0
+      ? `${it.category || '其他'} · ${it.objects} 个物体`
+      : `${it.category || '其他'} · 未标注`;
     return `<li data-i="${i}" class="${i === S.idx ? 'active' : ''}">
       <img src="/api/img/${encodeURIComponent(it.name)}" loading="lazy" alt="">
       <div style="min-width:0">
@@ -160,7 +202,9 @@ async function selectImage(i) {
   const name = S.images[i].name;
   S.cur = await (await fetch('/api/annotation/' + encodeURIComponent(name))).json();
   S.img = await loadImg('/api/img/' + encodeURIComponent(name));
-  document.querySelectorAll('#imgList li').forEach((li, k) => li.classList.toggle('active', k === i));
+  $('catSel').value = S.cur.category || '其他';
+  document.querySelectorAll('#imgList li').forEach(li =>
+    li.classList.toggle('active', +li.dataset.i === i));
   $('hint').style.display = 'none';
   fitCanvas(); draw(); renderObjectList(); updateObjBox();
   status(`${name}　${S.cur.width}×${S.cur.height}　${S.cur.objects.length} 个物体`);
@@ -475,6 +519,7 @@ async function uploadImage(e) {
   status(`正在上传 ${f.name} ……`);
   const fd = new FormData();
   fd.append('file', f);
+  fd.append('category', $('catSel').value);   // 照片类别（客厅/卧室/…）
   let res;
   try {
     res = await (await fetch('/api/upload', { method: 'POST', body: fd })).json();
@@ -545,8 +590,35 @@ async function doExport() {
   status(`导出完成：${res.images_total} 张 / ${res.objects} 个物体`);
 }
 
-async function pollProgress() {
-  const p = await (await fetch('/api/progress')).json();
+/* ---------------------------------------------------------------- 导出标注照片 */
+/* 把标过的图连框带标签烧进图片，打包成 zip 下载（给不装 Python 的人看结果用） */
+async function exportImages() {
+  const btn = $('btnExportImg');
+  const old = btn.textContent;
+  btn.textContent = '打包中……'; btn.disabled = true;
+  status('正在把标注画到照片上并打包……');
+  try {
+    const r = await fetch('/api/export_images', { method: 'POST' });
+    if (!r.ok) throw new Error('服务端 ' + r.status);
+    const n = r.headers.get('X-Image-Count') || '?';
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '标注照片.zip';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast(`已打包 ${n} 张标注照片\n打开 zip 就能看到画好框的图，旁边还有同名 .json 标注`);
+    status(`已导出 ${n} 张标注照片`);
+    btn.textContent = '已导出 ✓';
+  } catch (e) {
+    status('导出失败：' + e.message);
+    toast('导出失败：' + e.message, true);
+    btn.textContent = '导出失败';
+  }
+  setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 2600);
+}
+
+async function pollProgress() {  const p = await (await fetch('/api/progress')).json();
   $('barFill').style.width = (p.total ? (p.done / p.total * 100) : 0) + '%';
   $('progressText').textContent = p.running
     ? `${p.done}/${p.total}　${p.current || ''}`
