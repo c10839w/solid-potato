@@ -1,0 +1,40 @@
+{
+  "tag": "baseline",
+  "model": "yolo26n-seg.pt（COCO 预训练，未用本数据集训练）",
+  "split": "val",
+  "imgsz": 512,
+  "note": "标签已临时翻译成 COCO 编号再评估，与本项目 10 类口径等价",
+  "val_images": 40,
+  "box_map50": 0.712,
+  "box_map50_95": 0.5177,
+  "box_precision": 0.7554,
+  "box_recall": 0.6398,
+  "box_map50_per_class": {
+    "person": 0.9176,
+    "bottle": 0.6148,
+    "cup": 0.6288,
+    "chair": 0.6584,
+    "couch": 0.7504,
+    "potted plant": 0.6399,
+    "bed": 0.8406,
+    "dining table": 0.4058,
+    "tv": 0.9639,
+    "laptop": 0.6995
+  },
+  "mask_map50": 0.641,
+  "mask_map50_95": 0.4231,
+  "mask_precision": 0.7373,
+  "mask_recall": 0.5976,
+  "mask_map50_per_class": {
+    "person": 0.9067,
+    "bottle": 0.5054,
+    "cup": 0.5631,
+    "chair": 0.5529,
+    "couch": 0.7001,
+    "potted plant": 0.5139,
+    "bed": 0.8049,
+    "dining table": 0.3452,
+    "tv": 0.8187,
+    "laptop": 0.6995
+  }
+}

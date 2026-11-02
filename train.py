@@ -55,6 +55,13 @@ def main():
     ap.add_argument("--task", choices=["seg", "det"], default="seg")
     ap.add_argument("--model", default=None)
     ap.add_argument("--name", default=None, help="这次训练的名字（默认按时间自动起）")
+    ap.add_argument("--lr0", type=float, default=0.0015,
+                    help="初始学习率。小数据集必须调小，默认 0.01 会把预训练权重冲坏")
+    ap.add_argument("--patience", type=int, default=20, help="多少轮没提升就提前停")
+    ap.add_argument("--close-mosaic", type=int, default=8,
+                    help="最后几轮关掉马赛克增强，通常能提一点精度")
+    ap.add_argument("--no-copy", action="store_true",
+                    help="不覆盖 model/best.pt（对比实验时用，免得把好模型换掉）")
     a = ap.parse_args()
 
     yml = check_dataset(a.task)
@@ -83,15 +90,22 @@ def main():
         project=str(ROOT / "runs"),
         name=name,
         exist_ok=True,
+        lr0=a.lr0,
+        lrf=0.01,              # 收尾学习率 = lr0 * 0.01，让最后几轮稳定收敛
+        cos_lr=True,           # 余弦退火，比阶梯下降更平滑
+        patience=a.patience,
+        close_mosaic=a.close_mosaic,
         plots=True,
         verbose=True,
     )
 
     # 训练产物统一收到 model/ 下，任务书要求 model/best.pt
     best_src = Path(model.trainer.best)
-    MODEL_DIR.mkdir(exist_ok=True)
     best_dst = MODEL_DIR / "best.pt"
-    if best_src.exists():
+    if a.no_copy:
+        print(f"  （--no-copy）本次权重留在 {best_src}，没有覆盖 model/best.pt")
+    elif best_src.exists():
+        MODEL_DIR.mkdir(exist_ok=True)
         shutil.copyfile(best_src, best_dst)
         shutil.copyfile(model.trainer.last, MODEL_DIR / "last.pt")
 
