@@ -320,3 +320,6 @@ select {
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.err { border-left-color: #C0503C; }
+
+/* 修正记录达到 60 处后变绿提示 */
+#fixInfo.done { color: #2F7D5B; font-weight: 600; }

@@ -110,13 +110,25 @@ function refreshTips() {
   $('tips').innerHTML = map[S.mode].map(t => `<li>${t}</li>`).join('');
 }
 
+
+/* 修正记录显示：带上任务书要求的 60 处目标，随时知道还差多少 */
+const FIX_TARGET = 60;
+function renderFixInfo(n, pending) {
+  const left = Math.max(0, FIX_TARGET - n);
+  const tail = n >= FIX_TARGET ? '已达标' : `还差 ${left} 处`;
+  const extra = pending ? `（未保存 ${pending}）` : '';
+  const el = $('fixInfo');
+  el.textContent = `修正 ${n}/${FIX_TARGET} 处 · ${tail}${extra}`;
+  el.className = n >= FIX_TARGET ? 'done' : 'muted';
+}
+
 /* ---------------------------------------------------------------- 图片列表 */
 async function loadImages() {
   const data = await (await fetch('/api/images')).json();
   S.images = data.images;
   S.fixTotal = data.fixes;
   renderImageList();
-  $('fixInfo').textContent = `修正记录 ${data.fixes} 条`;
+  renderFixInfo(data.fixes, 0);
   if (S.images.length && S.idx < 0) selectImage(0);
 }
 
@@ -408,7 +420,7 @@ function record(action, ob, before, after) {
     class_id: ob.class_id, before, after,
   });
   S.fixTotal += 1;
-  $('fixInfo').textContent = `修正记录 ${S.fixTotal} 条（未保存 ${S.fixes.length}）`;
+  renderFixInfo(S.fixTotal, S.fixes.length);
 }
 
 function markDirty() { S.dirty = true; }
@@ -423,7 +435,7 @@ async function save(showMsg) {
   })).json();
   S.fixes = []; S.dirty = false;
   S.fixTotal = res.fixes;
-  $('fixInfo').textContent = `修正记录 ${res.fixes} 条`;
+  renderFixInfo(res.fixes, 0);
   if (showMsg) status('已保存　' + new Date().toLocaleTimeString());
 }
 
