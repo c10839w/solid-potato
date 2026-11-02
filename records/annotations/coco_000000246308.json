@@ -4,7 +4,7 @@
   "height": 640,
   "objects": [
     {
-      "id": "o77_0",
+      "id": "o15_0",
       "class_id": 5,
       "polygon": [
         [
@@ -56,7 +56,7 @@
       "source": "model"
     },
     {
-      "id": "o77_1",
+      "id": "o15_1",
       "class_id": 4,
       "polygon": [
         [
@@ -136,7 +136,7 @@
       "source": "model"
     },
     {
-      "id": "o77_2",
+      "id": "o15_2",
       "class_id": 7,
       "polygon": [
         [
@@ -236,7 +236,7 @@
       "source": "model"
     },
     {
-      "id": "o77_3",
+      "id": "o15_3",
       "class_id": 0,
       "polygon": [
         [

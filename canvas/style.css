@@ -323,3 +323,11 @@ select {
 
 /* 修正记录达到 60 处后变绿提示 */
 #fixInfo.done { color: #2F7D5B; font-weight: 600; }
+
+/* 侧栏里的小按钮（上传识别） */
+.btn.mini {
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  margin-left: auto;
+}

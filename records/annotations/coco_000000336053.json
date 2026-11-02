@@ -4,7 +4,7 @@
   "height": 480,
   "objects": [
     {
-      "id": "o107_0",
+      "id": "o45_0",
       "class_id": 0,
       "polygon": [
         [
@@ -104,7 +104,7 @@
       "source": "model"
     },
     {
-      "id": "o107_1",
+      "id": "o45_1",
       "class_id": 0,
       "polygon": [
         [
@@ -224,7 +224,7 @@
       "source": "model"
     },
     {
-      "id": "o107_2",
+      "id": "o45_2",
       "class_id": 1,
       "polygon": [
         [
@@ -348,7 +348,7 @@
       "source": "model"
     },
     {
-      "id": "o107_3",
+      "id": "o45_3",
       "class_id": 2,
       "polygon": [
         [
@@ -484,7 +484,7 @@
       "source": "model"
     },
     {
-      "id": "o107_4",
+      "id": "o45_4",
       "class_id": 1,
       "polygon": [
         [
@@ -580,7 +580,7 @@
       "source": "model"
     },
     {
-      "id": "o107_5",
+      "id": "o45_5",
       "class_id": 1,
       "polygon": [
         [
@@ -680,7 +680,7 @@
       "source": "model"
     },
     {
-      "id": "o107_6",
+      "id": "o45_6",
       "class_id": 1,
       "polygon": [
         [
@@ -768,7 +768,7 @@
       "source": "model"
     },
     {
-      "id": "o107_7",
+      "id": "o45_7",
       "class_id": 0,
       "polygon": [
         [
@@ -864,7 +864,7 @@
       "source": "model"
     },
     {
-      "id": "o107_8",
+      "id": "o45_8",
       "class_id": 0,
       "polygon": [
         [
@@ -940,7 +940,7 @@
       "source": "model"
     },
     {
-      "id": "o107_9",
+      "id": "o45_9",
       "class_id": 0,
       "polygon": [
         [
@@ -988,7 +988,7 @@
       "source": "model"
     },
     {
-      "id": "o107_10",
+      "id": "o45_10",
       "class_id": 7,
       "polygon": [
         [
@@ -1084,7 +1084,7 @@
       "source": "model"
     },
     {
-      "id": "o107_11",
+      "id": "o45_11",
       "class_id": 0,
       "polygon": [
         [
@@ -1160,7 +1160,7 @@
       "source": "model"
     },
     {
-      "id": "o107_12",
+      "id": "o45_12",
       "class_id": 0,
       "polygon": [
         [
@@ -1252,7 +1252,7 @@
       "source": "model"
     },
     {
-      "id": "o107_13",
+      "id": "o45_13",
       "class_id": 0,
       "polygon": [
         [
@@ -1328,7 +1328,7 @@
       "source": "model"
     },
     {
-      "id": "o107_14",
+      "id": "o45_14",
       "class_id": 1,
       "polygon": [
         [

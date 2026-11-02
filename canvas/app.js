@@ -94,6 +94,8 @@ function bindUI() {
   $('btnPrelabel').addEventListener('click', () => prelabel([S.cur && S.cur.image].filter(Boolean)));
   $('btnPrelabelAll').addEventListener('click', () => prelabel([]));
   $('btnExport').addEventListener('click', doExport);
+  $('btnUpload').addEventListener('click', () => $('fileUpload').click());
+  $('fileUpload').addEventListener('change', uploadImage);
 }
 
 function refreshTips() {
@@ -463,6 +465,31 @@ function updateObjBox() {
   $('objBox').textContent = `${S.zh[ob.class_id]}　置信度 ${ob.conf ?? '-'}　${ob.source === 'human' ? '人工修改' : '模型草稿'}`;
   $('classSel').value = ob.class_id;
   S.newClass = ob.class_id;
+}
+
+/* ---------------------------------------------------------------- 上传识别 */
+/* 答辩演示用：现场拍一张图，上传后立刻用模型标一遍 */
+async function uploadImage(e) {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  status(`正在上传 ${f.name} ……`);
+  const fd = new FormData();
+  fd.append('file', f);
+  let res;
+  try {
+    res = await (await fetch('/api/upload', { method: 'POST', body: fd })).json();
+  } catch (err) {
+    status('上传失败：' + err); return;
+  } finally {
+    e.target.value = '';             // 允许同一张图再传一次
+  }
+  if (!res.ok) { status(res.message || '上传失败'); return; }
+
+  await loadImages();
+  const i = S.images.findIndex(it => it.name === res.name);
+  if (i >= 0) await selectImage(i);
+  status(`${res.name} 已上传，正在识别……`);
+  prelabel([res.name]);              // 上传完直接跑模型
 }
 
 /* ---------------------------------------------------------------- 预标注 */

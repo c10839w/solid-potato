@@ -4,7 +4,7 @@
   "height": 480,
   "objects": [
     {
-      "id": "o123_0",
+      "id": "o61_0",
       "class_id": 8,
       "polygon": [
         [
@@ -128,7 +128,7 @@
       "source": "model"
     },
     {
-      "id": "o123_1",
+      "id": "o61_1",
       "class_id": 8,
       "polygon": [
         [
@@ -232,7 +232,7 @@
       "source": "model"
     },
     {
-      "id": "o123_2",
+      "id": "o61_2",
       "class_id": 1,
       "polygon": [
         [
@@ -332,7 +332,7 @@
       "source": "model"
     },
     {
-      "id": "o123_3",
+      "id": "o61_3",
       "class_id": 8,
       "polygon": [
         [

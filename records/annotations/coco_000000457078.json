@@ -4,7 +4,7 @@
   "height": 480,
   "objects": [
     {
-      "id": "o145_0",
+      "id": "o83_0",
       "class_id": 4,
       "polygon": [
         [
@@ -44,7 +44,7 @@
       "source": "model"
     },
     {
-      "id": "o145_1",
+      "id": "o83_1",
       "class_id": 0,
       "polygon": [
         [

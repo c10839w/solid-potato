@@ -49,35 +49,55 @@ def load_model(model_path="yolo26n-seg.pt"):
     return _MODELS[key]
 
 
+def model_classes(model):
+    """
+    判断这个权重"说的是哪套编号"。
+
+    两种权重差别很大：
+      yolo26n-seg.pt   -> 80 个 COCO 类别，编号 0~79（椅子是 56，不是 1），要翻译
+      model/best.pt    -> 我们自己训练的 10 类，编号 0~9 就是 classes.yaml 的顺序，不用翻译
+    返回 (喂给 predict 的 classes 列表, 是否还需要 COCO 翻译)
+    """
+    names = model.names
+    vals = [str(names[i]) for i in sorted(names)]
+    if vals[:len(NAMES)] == NAMES:            # 自训权重：前十个名字和我们完全一致
+        return list(range(len(NAMES))), False
+    return COCO_IDS, True
+
+
 def prelabel_seg(img_path, model_path="yolo26n-seg.pt", conf=0.25):
     """
     用实例分割模型画草稿：得到「轮廓」，框再由轮廓派生。
     返回 [{'class_id': 0, 'polygon': [[x,y],...], 'bbox': [x1,y1,x2,y2], 'conf': 0.93}, ...]
     """
     model = load_model(model_path)
+    classes, need_map = model_classes(model)
     result = model.predict(
         str(img_path),
         conf=conf,
-        classes=COCO_IDS,      # 只保留我们关心的十类，其余 70 类直接丢掉
+        classes=classes,      # 通用权重：只保留我们关心的十类，其余 70 类直接丢掉
         verbose=False,
     )[0]
 
-    return objects_from_result(result)
+    return objects_from_result(result, need_map)
 
 
-def objects_from_result(result):
+def objects_from_result(result, need_map=True):
     """把 ultralytics 的预测结果转成我们的物体列表（界面和脚本共用这一份逻辑）"""
     objs = []
     if result.masks is None:          # 一张图里一个目标都没认出来
         return objs
 
     for i, (cls, score) in enumerate(zip(result.boxes.cls.tolist(), result.boxes.conf.tolist())):
-        pts = _mask_to_polygon(result.masks.data[i])
+        pts = _mask_to_polygon(result.masks.data[i], result.orig_shape)
         if pts is None:
             continue
+        idx = COCO_TO_OURS[int(cls)] if need_map else int(cls)
+        if idx >= len(NAMES):         # 兜底：模型吐出没见过的类别
+            continue
         objs.append({
-            "class_id": COCO_TO_OURS[int(cls)],   # 翻译成我们的 0~9
-            "class_name": NAMES[COCO_TO_OURS[int(cls)]],
+            "class_id": idx,          # 统一成我们的 0~9
+            "class_name": NAMES[idx],
             "polygon": pts,
             "bbox": _bbox_from_polygon(pts),
             "conf": round(float(score), 3),
@@ -85,18 +105,30 @@ def objects_from_result(result):
     return objs
 
 
-def _mask_to_polygon(mask, min_area=40, eps_ratio=0.004):
+def _mask_to_polygon(mask, orig_shape=None, min_area=40, eps_ratio=0.004):
     """
-    把模型输出的一张掩码变成"一条干净的外轮廓"。
+    把模型输出的一张掩码变成"一条干净的外轮廓"，坐标是**原图像素**。
 
-    为什么要自己算而不用 result.masks.xy：
-      物体被别的东西挡住时（比如猫坐在沙发上），掩码里会留下一个"洞"。
-      ultralytics 的 masks.xy 会把外轮廓和洞拼成一条线，画出来就是
-      "边框绕一圈、又拐进去绕着猫",看着像"框住了一只猫"，其实是坏数据。
-    这里只取面积最大的外轮廓，洞直接丢掉 —— 一条轮廓 = 一个物体。
+    两个坑，这里都处理掉了：
+
+    坑一：坐标偏移。模型吐出来的掩码是"补过边的模型输入尺寸"（比如原图 640×426，
+      掩码却是 640×448，上下各补了 11 像素黑边）。直接取轮廓当原图坐标，
+      框就会整体往右下偏 11 像素。所以先借 ultralytics 自己的 scale_masks
+      把掩码缩回原图大小（它会自动扣掉补边、按比例还原），再取轮廓。
+
+    坑二：掩码里有洞。物体被别的东西挡住时（比如猫坐在沙发上），掩码会留一个洞。
+      ultralytics 的 masks.xy 会把外轮廓和洞拼成一条线，画出来是"框绕一圈、
+      又拐进去绕着猫"，看着像框住了一只猫，其实是坏数据。
+      这里只取面积最大的外轮廓，洞直接丢掉 —— 一条轮廓 = 一个物体。
     """
     import numpy as np
     import cv2
+
+    if orig_shape is not None and tuple(mask.shape[-2:]) != tuple(orig_shape):
+        from ultralytics.utils import ops
+
+        # mask: (H,W) -> (1,1,H,W) 才能进 scale_masks；它会缩到原图并扣掉补边
+        mask = ops.scale_masks(mask[None, None].float(), orig_shape)[0, 0]
 
     m = (mask.cpu().numpy() > 0.5).astype(np.uint8)
     if m.sum() == 0:

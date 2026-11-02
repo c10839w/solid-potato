@@ -58,20 +58,21 @@ def main():
 
     t0 = time.time()
     model = P.load_model()            # 只加载一次，之后复用
+    classes, need_map = P.model_classes(model)   # 自训权重不做 COCO 编号翻译
     total_objs = 0
     for i, p in enumerate(todo, 1):
         t = time.time()
         try:
             with Image.open(p) as im:
                 w, h = im.size
-            r = model.predict(str(p), conf=0.25, classes=P.COCO_IDS, verbose=False)[0]
+            r = model.predict(str(p), conf=0.25, classes=classes, verbose=False)[0]
             objs = [{
                 "id": f"o{i}_{k}",
                 "class_id": o["class_id"],
                 "polygon": o["polygon"],
                 "conf": o["conf"],
                 "source": "model",
-            } for k, o in enumerate(P.objects_from_result(r))]
+            } for k, o in enumerate(P.objects_from_result(r, need_map))]
             data = {"image": p.name, "width": w, "height": h, "objects": objs}
             (ANN / (p.stem + ".json")).write_text(
                 json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

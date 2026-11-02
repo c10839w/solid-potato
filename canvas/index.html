@@ -12,6 +12,8 @@
     <div class="side-head">
       <span>图片</span>
       <span class="muted" id="imgCount">0 张</span>
+      <button id="btnUpload" class="btn mini" title="上传一张新照片，上传后自动识别">＋ 上传识别</button>
+      <input type="file" id="fileUpload" accept="image/*" hidden>
     </div>
     <ul class="img-list" id="imgList"></ul>
   </aside>
@@ -28,6 +30,7 @@
       <button id="btnPrelabel" class="btn">预标注本张</button>
       <button id="btnPrelabelAll" class="btn">预标注全部</button>
       <button id="btnExport" class="btn">导出数据集</button>
+      <a class="btn" href="/compare" target="_blank" title="改造前后精度对比与第二轮回标结果">对比报告</a>
       <button id="btnSave" class="btn primary">保存</button>
     </header>
 

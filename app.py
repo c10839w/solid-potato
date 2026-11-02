@@ -14,7 +14,7 @@ import threading
 import time
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_file, send_from_directory
 
 import prelabel as P
 
@@ -23,6 +23,7 @@ RAW_DIR = ROOT / "data" / "raw"
 PREVIEW_DIR = ROOT / "data" / "preview"
 ANN_DIR = ROOT / "records" / "annotations"
 FIX_LOG = ROOT / "records" / "fixes.jsonl"
+REPORT = ROOT / "records" / "compare.html"
 
 for d in (RAW_DIR, PREVIEW_DIR, ANN_DIR):
     d.mkdir(parents=True, exist_ok=True)
@@ -186,6 +187,7 @@ def api_post_ann(name):
 def _prelabel_worker(names):
     try:
         model = get_model()
+        classes, need_map = P.model_classes(model)   # 自训权重不用做 COCO 编号翻译
         set_progress(total=len(names), done=0)
         for i, name in enumerate(names, 1):
             set_progress(current=name, message=f"正在处理 {name}")
@@ -193,14 +195,14 @@ def _prelabel_worker(names):
             w, h = image_size(img)
             try:
                 r = model.predict(str(img), conf=0.25,
-                                  classes=P.COCO_IDS, verbose=False)[0]
+                                  classes=classes, verbose=False)[0]
                 objs = [{
                     "id": f"o{i}_{k}",
                     "class_id": o["class_id"],
                     "polygon": o["polygon"],
                     "conf": o["conf"],
                     "source": "model",
-                } for k, o in enumerate(P.objects_from_result(r))]
+                } for k, o in enumerate(P.objects_from_result(r, need_map))]
                 save_annotation({"image": name, "width": w, "height": h, "objects": objs})
             except Exception as e:
                 set_progress(message=f"{name} 失败：{e}")
@@ -226,6 +228,27 @@ def api_prelabel():
     return jsonify({"ok": True, "total": len(names)})
 
 
+@app.route("/compare")
+def compare_page():
+    """前后对比报告（make_report.py 生成）：改造前 vs 改造后的精度、第二轮回标修正量"""
+    if not REPORT.exists():
+        return ("<meta charset='utf-8'><p style='font:16px/1.8 sans-serif;padding:40px'>"
+                "对比报告还没生成。<br>在 Miniforge Prompt 里运行：<br>"
+                "<code>python eval_model.py --model model/best.pt --tag trained</code><br>"
+                "<code>python round2_compare.py</code><br>"
+                "<code>python make_report.py</code></p>"), 404
+    return send_file(REPORT)
+
+
+@app.route("/api/report")
+def api_report():
+    """界面用：报告是否已经生成"""
+    return jsonify({"ready": REPORT.exists(),
+                    "path": str(REPORT),
+                    "mtime": time.strftime("%Y-%m-%d %H:%M",
+                                           time.localtime(REPORT.stat().st_mtime))
+                    if REPORT.exists() else None})
+
 @app.route("/api/progress")
 def api_progress():
     return jsonify(PROGRESS)
@@ -244,6 +267,41 @@ def api_export():
     return jsonify(report)
 
 
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    """现场上传一张新照片（答辩演示用）：压缩到长边 960，存进 data/raw，返回文件名"""
+    import io
+    import re
+    from PIL import Image
+
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"ok": False, "message": "没有收到文件"}), 400
+
+    stem = Path(f.filename).stem
+    stem = re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", stem)[:40] or "upload"
+    dst = RAW_DIR / f"{stem}.jpg"
+    i = 1
+    while dst.exists():
+        dst = RAW_DIR / f"{stem}_{i}.jpg"
+        i += 1
+
+    try:
+        img = Image.open(io.BytesIO(f.read())).convert("RGB")
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"这张图打不开：{type(e).__name__}"}), 400
+
+    w, h = img.size
+    mx = max(w, h)
+    if mx > 960:                       # 和数据集规格保持一致
+        img = img.resize((round(w * 960 / mx), round(h * 960 / mx)))
+    img.save(dst, "JPEG", quality=85)
+
+    return jsonify({"ok": True, "name": dst.name,
+                    "width": img.size[0], "height": img.size[1],
+                    "message": f"已上传 {dst.name}"})
+
+
 # ---------------------------------------------------------------- 启动
 def open_browser_later(port=5000):
     import webbrowser
@@ -258,17 +316,32 @@ if __name__ == "__main__":
     ap.add_argument("--model", default=None,
                     help="预标注用的权重，默认 yolo26n-seg.pt；第二轮填 model/best.pt")
     ap.add_argument("--port", type=int, default=5000)
+    ap.add_argument("--lan", action="store_true",
+                    help="允许同一 WiFi 下的手机/别的电脑访问（默认只本机）")
     args = ap.parse_args()
     if args.model:
         MODEL_PATH = (ROOT / args.model) if not Path(args.model).is_absolute() else Path(args.model)
         if not MODEL_PATH.exists():
             raise SystemExit(f"找不到模型文件：{MODEL_PATH}")
 
+    host = "0.0.0.0" if args.lan else "127.0.0.1"
+
     print("=" * 56)
     print("  人机协同图像标注系统  已启动")
     print(f"  预标注模型：{MODEL_PATH.name}")
-    print(f"  浏览器地址：http://127.0.0.1:{args.port}")
+    print(f"  本机地址：http://127.0.0.1:{args.port}")
+    if args.lan:
+        import socket
+        try:
+            s_ = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s_.connect(("8.8.8.8", 80))
+            ip = s_.getsockname()[0]
+            s_.close()
+        except Exception:
+            ip = "（查不到，用 ipconfig 看 IPv4 地址）"
+        print(f"  局域网地址：http://{ip}:{args.port}   ← 同一 WiFi 下的手机/电脑用这个")
+        print("  首次可能弹出「Windows 安全中心」允许访问，点允许")
     print("  关闭这个黑窗口即停止运行")
     print("=" * 56)
     threading.Thread(target=lambda: open_browser_later(args.port), daemon=True).start()
-    app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
+    app.run(host=host, port=args.port, debug=False, threaded=True)

@@ -4,7 +4,7 @@
   "height": 480,
   "objects": [
     {
-      "id": "o149_0",
+      "id": "o87_0",
       "class_id": 0,
       "polygon": [
         [
@@ -128,7 +128,7 @@
       "source": "model"
     },
     {
-      "id": "o149_1",
+      "id": "o87_1",
       "class_id": 0,
       "polygon": [
         [
@@ -240,7 +240,7 @@
       "source": "model"
     },
     {
-      "id": "o149_2",
+      "id": "o87_2",
       "class_id": 1,
       "polygon": [
         [
@@ -336,7 +336,7 @@
       "source": "model"
     },
     {
-      "id": "o149_3",
+      "id": "o87_3",
       "class_id": 1,
       "polygon": [
         [
@@ -432,7 +432,7 @@
       "source": "model"
     },
     {
-      "id": "o149_4",
+      "id": "o87_4",
       "class_id": 1,
       "polygon": [
         [
@@ -512,7 +512,7 @@
       "source": "model"
     },
     {
-      "id": "o149_5",
+      "id": "o87_5",
       "class_id": 0,
       "polygon": [
         [
@@ -684,7 +684,7 @@
       "source": "model"
     },
     {
-      "id": "o149_6",
+      "id": "o87_6",
       "class_id": 0,
       "polygon": [
         [
@@ -804,7 +804,7 @@
       "source": "model"
     },
     {
-      "id": "o149_7",
+      "id": "o87_7",
       "class_id": 0,
       "polygon": [
         [
@@ -912,7 +912,7 @@
       "source": "model"
     },
     {
-      "id": "o149_8",
+      "id": "o87_8",
       "class_id": 0,
       "polygon": [
         [
@@ -1004,7 +1004,7 @@
       "source": "model"
     },
     {
-      "id": "o149_9",
+      "id": "o87_9",
       "class_id": 0,
       "polygon": [
         [
@@ -1136,7 +1136,7 @@
       "source": "model"
     },
     {
-      "id": "o149_10",
+      "id": "o87_10",
       "class_id": 0,
       "polygon": [
         [
@@ -1240,7 +1240,7 @@
       "source": "model"
     },
     {
-      "id": "o149_11",
+      "id": "o87_11",
       "class_id": 0,
       "polygon": [
         [
@@ -1340,7 +1340,7 @@
       "source": "model"
     },
     {
-      "id": "o149_12",
+      "id": "o87_12",
       "class_id": 2,
       "polygon": [
         [

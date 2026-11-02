@@ -4,7 +4,7 @@
   "height": 480,
   "objects": [
     {
-      "id": "o171_0",
+      "id": "o109_0",
       "class_id": 5,
       "polygon": [
         [
@@ -88,7 +88,7 @@
       "source": "model"
     },
     {
-      "id": "o171_1",
+      "id": "o109_1",
       "class_id": 0,
       "polygon": [
         [
@@ -224,7 +224,7 @@
       "source": "model"
     },
     {
-      "id": "o171_2",
+      "id": "o109_2",
       "class_id": 1,
       "polygon": [
         [
@@ -324,7 +324,7 @@
       "source": "model"
     },
     {
-      "id": "o171_3",
+      "id": "o109_3",
       "class_id": 7,
       "polygon": [
         [
@@ -424,7 +424,7 @@
       "source": "model"
     },
     {
-      "id": "o171_4",
+      "id": "o109_4",
       "class_id": 1,
       "polygon": [
         [
@@ -536,7 +536,7 @@
       "source": "model"
     },
     {
-      "id": "o171_5",
+      "id": "o109_5",
       "class_id": 8,
       "polygon": [
         [
@@ -624,7 +624,7 @@
       "source": "model"
     },
     {
-      "id": "o171_6",
+      "id": "o109_6",
       "class_id": 7,
       "polygon": [
         [
