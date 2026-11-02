@@ -202,14 +202,21 @@ def export(val_ratio=0.2, seed=42, only_human=False, verbose=True):
         return {"ok": False, "message": msg}
 
     # 2) 划分训练 / 验证（固定随机种子，每次结果一致，方便复现）
+    #    人工修正过的图优先划入验证集：mAP 要对着「人标的答案」算，
+    #    否则等于拿模型自己的草稿考模型，数字会虚高。
     rnd = random.Random(seed)
-    idx = list(range(len(items)))
-    rnd.shuffle(idx)
     n_val = 0
+    n_val_human = 0
     if len(items) >= 2:
         n_val = max(1, int(round(len(items) * val_ratio)))
         n_val = min(n_val, len(items) - 1)
-    val_ids = set(idx[:n_val])
+    human_idx = [i for i, (_, _, k) in enumerate(items) if k == "human"]
+    other_idx = [i for i, (_, _, k) in enumerate(items) if k != "human"]
+    rnd.shuffle(human_idx)
+    rnd.shuffle(other_idx)
+    order = human_idx + other_idx
+    val_ids = set(order[:n_val])
+    n_val_human = len(set(human_idx) & val_ids)
 
     _fresh_dirs()
 
@@ -287,6 +294,7 @@ def export(val_ratio=0.2, seed=42, only_human=False, verbose=True):
         "images_total": n_train + n_val_actual,
         "train": n_train,
         "val": n_val_actual,
+        "val_human": n_val_human,
         "objects": n_obj,
         "box_skipped": n_skip,
         "skipped_empty": len(skipped_empty),
@@ -301,7 +309,8 @@ def export(val_ratio=0.2, seed=42, only_human=False, verbose=True):
     if verbose:
         print("=" * 58)
         print(f"  导出完成　用时 {report['seconds']} 秒")
-        print(f"  图片 {report['images_total']} 张 → 训练 {n_train} / 验证 {n_val_actual}")
+        print(f"  图片 {report['images_total']} 张 → 训练 {n_train} / 验证 {n_val_actual}"
+              f"（其中人工修正过 {n_val_human} 张）")
         print(f"  物体 {n_obj} 个，跳过过小框 {n_skip} 个")
         print(f"  空标注跳过 {len(skipped_empty)} 张")
         print("-" * 58)
