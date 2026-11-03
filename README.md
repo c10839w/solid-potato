@@ -9,6 +9,35 @@
 
 ---
 
+## 零、别人拿到这个仓库后怎么跑（三步）
+
+> 这个系统是**本地服务**，`127.0.0.1` 是「本机回环地址」——只有运行它的那台电脑能打开，
+> 别人点这个链接一定打不开，这不是故障。正确的用法是：把仓库下载到自己电脑，自己把服务跑起来。
+
+```bash
+# 1) 装依赖（Python 3.10+；有 conda 更好，没有也能用 pip）
+pip install -r requirements.txt
+
+# 2) 启动（权重 model/best.pt 和 461 张原始图片都在仓库里，不用另外下载）
+python app.py --model model/best.pt
+
+# 3) 浏览器打开
+#    http://127.0.0.1:5000
+```
+
+四个页面：`/` 封面 · `/workbench` 标注工作台 · `/gallery` 照片墙 · `/compare` 对比报告。
+
+常见问题：
+
+- **没有 conda**：`python -m venv venv` → Windows 下 `venv\Scripts\activate`，
+  macOS/Linux 下 `source venv/bin/activate`，再 `pip install -r requirements.txt`。
+- **不想装环境**：直接要一份 `dist/人机协同图像标注系统_交付包_*.zip`（13 MB，含源码、权重、标注、报告）。
+- **不想下载权重**：仓库里已经带了 `model/best.pt`；如果去掉 `--model` 参数，程序会去网上下载
+  通用模型 `yolo26n-seg.pt`（约 6 MB），首次启动需要联网。
+- **macOS / Linux**：`启动.bat` 是 Windows 用的，其他系统直接执行上面第 2 步的命令即可。
+
+---
+
 ## 一、怎么运行
 
 **方式 A：双击（推荐）**
