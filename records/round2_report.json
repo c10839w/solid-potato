@@ -1,0 +1,886 @@
+{
+  "summary": {
+    "images": 40,
+    "round1": {
+      "need_fix": 98,
+      "miss": 80,
+      "wrong_class": 10,
+      "drift": 4,
+      "extra": 4,
+      "gt_objects": 270,
+      "per_image": 2.45
+    },
+    "round2": {
+      "need_fix": 179,
+      "miss": 62,
+      "wrong_class": 33,
+      "drift": 14,
+      "extra": 70,
+      "gt_objects": 270,
+      "per_image": 4.47
+    },
+    "improvement_pct": {
+      "need_fix": -82.7,
+      "miss": 22.5,
+      "wrong_class": -230.0,
+      "drift": -250.0,
+      "extra": -1650.0
+    },
+    "seconds": 12.3,
+    "time": "2026-11-03 00:34:00"
+  },
+  "rows": [
+    {
+      "image": "coco_000000000139.jpg",
+      "round1": {
+        "need_fix": 4,
+        "miss": 4,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 13,
+        "draft_objects": 9
+      },
+      "round2": {
+        "need_fix": 7,
+        "miss": 4,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 2,
+        "gt_objects": 13,
+        "draft_objects": 11
+      }
+    },
+    {
+      "image": "coco_000000010707.jpg",
+      "round1": {
+        "need_fix": 3,
+        "miss": 2,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 12,
+        "draft_objects": 10
+      },
+      "round2": {
+        "need_fix": 2,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 12,
+        "draft_objects": 12
+      }
+    },
+    {
+      "image": "coco_000000022892.jpg",
+      "round1": {
+        "need_fix": 4,
+        "miss": 4,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 4,
+        "draft_objects": 0
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 4,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 4,
+        "draft_objects": 0
+      }
+    },
+    {
+      "image": "coco_000000029596.jpg",
+      "round1": {
+        "need_fix": 2,
+        "miss": 2,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 7,
+        "draft_objects": 5
+      },
+      "round2": {
+        "need_fix": 5,
+        "miss": 2,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 3,
+        "gt_objects": 7,
+        "draft_objects": 8
+      }
+    },
+    {
+      "image": "coco_000000031248.jpg",
+      "round1": {
+        "need_fix": 5,
+        "miss": 3,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 8,
+        "draft_objects": 6
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 2,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 8,
+        "draft_objects": 7
+      }
+    },
+    {
+      "image": "coco_000000031735.jpg",
+      "round1": {
+        "need_fix": 4,
+        "miss": 4,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 8,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 5,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 2,
+        "gt_objects": 8,
+        "draft_objects": 7
+      }
+    },
+    {
+      "image": "coco_000000039956.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 2,
+        "draft_objects": 2
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 3,
+        "gt_objects": 2,
+        "draft_objects": 5
+      }
+    },
+    {
+      "image": "coco_000000041872.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 5,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 1,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 5,
+        "draft_objects": 5
+      }
+    },
+    {
+      "image": "coco_000000047769.jpg",
+      "round1": {
+        "need_fix": 5,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 2,
+        "extra": 0,
+        "gt_objects": 7,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 5,
+        "miss": 2,
+        "wrong_class": 1,
+        "drift": 2,
+        "extra": 0,
+        "gt_objects": 7,
+        "draft_objects": 5
+      }
+    },
+    {
+      "image": "coco_000000050828.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 3,
+        "draft_objects": 2
+      },
+      "round2": {
+        "need_fix": 1,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 3,
+        "draft_objects": 3
+      }
+    },
+    {
+      "image": "coco_000000051738.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 2,
+        "draft_objects": 1
+      },
+      "round2": {
+        "need_fix": 2,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 2,
+        "draft_objects": 3
+      }
+    },
+    {
+      "image": "coco_000000060449.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 4,
+        "draft_objects": 3
+      },
+      "round2": {
+        "need_fix": 3,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 2,
+        "gt_objects": 4,
+        "draft_objects": 6
+      }
+    },
+    {
+      "image": "coco_000000066771.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 11,
+        "draft_objects": 11
+      },
+      "round2": {
+        "need_fix": 7,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 2,
+        "extra": 4,
+        "gt_objects": 11,
+        "draft_objects": 15
+      }
+    },
+    {
+      "image": "coco_000000084362.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 5,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 3,
+        "gt_objects": 5,
+        "draft_objects": 7
+      }
+    },
+    {
+      "image": "coco_000000089045.jpg",
+      "round1": {
+        "need_fix": 3,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 6,
+        "draft_objects": 3
+      },
+      "round2": {
+        "need_fix": 5,
+        "miss": 2,
+        "wrong_class": 2,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 6,
+        "draft_objects": 5
+      }
+    },
+    {
+      "image": "coco_000000092091.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 8,
+        "draft_objects": 7
+      },
+      "round2": {
+        "need_fix": 5,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 4,
+        "gt_objects": 8,
+        "draft_objects": 12
+      }
+    },
+    {
+      "image": "coco_000000097337.jpg",
+      "round1": {
+        "need_fix": 5,
+        "miss": 5,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 9,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 7,
+        "miss": 3,
+        "wrong_class": 3,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 9,
+        "draft_objects": 7
+      }
+    },
+    {
+      "image": "coco_000000106389.jpg",
+      "round1": {
+        "need_fix": 3,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 5,
+        "draft_objects": 2
+      },
+      "round2": {
+        "need_fix": 6,
+        "miss": 4,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 5,
+        "draft_objects": 2
+      }
+    },
+    {
+      "image": "coco_000000115870.jpg",
+      "round1": {
+        "need_fix": 4,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 1,
+        "extra": 0,
+        "gt_objects": 14,
+        "draft_objects": 11
+      },
+      "round2": {
+        "need_fix": 9,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 1,
+        "extra": 5,
+        "gt_objects": 14,
+        "draft_objects": 16
+      }
+    },
+    {
+      "image": "coco_000000116479.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 2,
+        "draft_objects": 1
+      },
+      "round2": {
+        "need_fix": 3,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 1,
+        "extra": 1,
+        "gt_objects": 2,
+        "draft_objects": 2
+      }
+    },
+    {
+      "image": "coco_000000125778.jpg",
+      "round1": {
+        "need_fix": 3,
+        "miss": 2,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 6,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 6,
+        "miss": 2,
+        "wrong_class": 2,
+        "drift": 0,
+        "extra": 2,
+        "gt_objects": 6,
+        "draft_objects": 6
+      }
+    },
+    {
+      "image": "coco_000000128148.jpg",
+      "round1": {
+        "need_fix": 2,
+        "miss": 2,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 6,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 1,
+        "wrong_class": 2,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 6,
+        "draft_objects": 6
+      }
+    },
+    {
+      "image": "coco_000000139684.jpg",
+      "round1": {
+        "need_fix": 2,
+        "miss": 1,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 5,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 1,
+        "wrong_class": 1,
+        "drift": 1,
+        "extra": 1,
+        "gt_objects": 5,
+        "draft_objects": 5
+      }
+    },
+    {
+      "image": "coco_000000159458.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 3,
+        "draft_objects": 2
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 3,
+        "gt_objects": 3,
+        "draft_objects": 6
+      }
+    },
+    {
+      "image": "coco_000000166166.jpg",
+      "round1": {
+        "need_fix": 2,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 1,
+        "extra": 0,
+        "gt_objects": 5,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 3,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 1,
+        "extra": 1,
+        "gt_objects": 5,
+        "draft_objects": 6
+      }
+    },
+    {
+      "image": "coco_000000170670.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 15,
+        "draft_objects": 15
+      },
+      "round2": {
+        "need_fix": 3,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 2,
+        "extra": 0,
+        "gt_objects": 15,
+        "draft_objects": 15
+      }
+    },
+    {
+      "image": "coco_000000171757.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 3,
+        "draft_objects": 2
+      },
+      "round2": {
+        "need_fix": 3,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 2,
+        "gt_objects": 3,
+        "draft_objects": 4
+      }
+    },
+    {
+      "image": "coco_000000172595.jpg",
+      "round1": {
+        "need_fix": 3,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 9,
+        "draft_objects": 6
+      },
+      "round2": {
+        "need_fix": 6,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 3,
+        "gt_objects": 9,
+        "draft_objects": 9
+      }
+    },
+    {
+      "image": "coco_000000180751.jpg",
+      "round1": {
+        "need_fix": 3,
+        "miss": 3,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 18,
+        "draft_objects": 15
+      },
+      "round2": {
+        "need_fix": 5,
+        "miss": 5,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 18,
+        "draft_objects": 13
+      }
+    },
+    {
+      "image": "coco_000000190236.jpg",
+      "round1": {
+        "need_fix": 9,
+        "miss": 7,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 13,
+        "draft_objects": 7
+      },
+      "round2": {
+        "need_fix": 14,
+        "miss": 6,
+        "wrong_class": 2,
+        "drift": 0,
+        "extra": 6,
+        "gt_objects": 13,
+        "draft_objects": 13
+      }
+    },
+    {
+      "image": "coco_000000190648.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 3,
+        "draft_objects": 2
+      },
+      "round2": {
+        "need_fix": 2,
+        "miss": 0,
+        "wrong_class": 0,
+        "drift": 1,
+        "extra": 1,
+        "gt_objects": 3,
+        "draft_objects": 4
+      }
+    },
+    {
+      "image": "coco_000000195754.jpg",
+      "round1": {
+        "need_fix": 4,
+        "miss": 2,
+        "wrong_class": 2,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 6,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 6,
+        "miss": 0,
+        "wrong_class": 3,
+        "drift": 0,
+        "extra": 3,
+        "gt_objects": 6,
+        "draft_objects": 9
+      }
+    },
+    {
+      "image": "coco_000000195842.jpg",
+      "round1": {
+        "need_fix": 2,
+        "miss": 2,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 6,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 6,
+        "draft_objects": 5
+      }
+    },
+    {
+      "image": "coco_000000195918.jpg",
+      "round1": {
+        "need_fix": 2,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 5,
+        "draft_objects": 5
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 3,
+        "gt_objects": 5,
+        "draft_objects": 7
+      }
+    },
+    {
+      "image": "coco_000000214720.jpg",
+      "round1": {
+        "need_fix": 6,
+        "miss": 6,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 12,
+        "draft_objects": 6
+      },
+      "round2": {
+        "need_fix": 10,
+        "miss": 5,
+        "wrong_class": 1,
+        "drift": 1,
+        "extra": 3,
+        "gt_objects": 12,
+        "draft_objects": 10
+      }
+    },
+    {
+      "image": "coco_000000216497.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 5,
+        "draft_objects": 4
+      },
+      "round2": {
+        "need_fix": 2,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 5,
+        "draft_objects": 5
+      }
+    },
+    {
+      "image": "coco_000000218091.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 0,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 5,
+        "draft_objects": 6
+      },
+      "round2": {
+        "need_fix": 2,
+        "miss": 0,
+        "wrong_class": 1,
+        "drift": 0,
+        "extra": 1,
+        "gt_objects": 5,
+        "draft_objects": 6
+      }
+    },
+    {
+      "image": "coco_000000222735.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 2,
+        "draft_objects": 1
+      },
+      "round2": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 2,
+        "draft_objects": 1
+      }
+    },
+    {
+      "image": "coco_000000232088.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 4,
+        "draft_objects": 3
+      },
+      "round2": {
+        "need_fix": 6,
+        "miss": 1,
+        "wrong_class": 1,
+        "drift": 1,
+        "extra": 3,
+        "gt_objects": 4,
+        "draft_objects": 6
+      }
+    },
+    {
+      "image": "coco_000000237517.jpg",
+      "round1": {
+        "need_fix": 1,
+        "miss": 1,
+        "wrong_class": 0,
+        "drift": 0,
+        "extra": 0,
+        "gt_objects": 4,
+        "draft_objects": 3
+      },
+      "round2": {
+        "need_fix": 4,
+        "miss": 1,
+        "wrong_class": 1,
+        "drift": 1,
+        "extra": 1,
+        "gt_objects": 4,
+        "draft_objects": 4
+      }
+    }
+  ],
+  "names": [
+    "person",
+    "chair",
+    "dining table",
+    "couch",
+    "tv",
+    "laptop",
+    "cup",
+    "bottle",
+    "potted plant",
+    "bed"
+  ]
+}

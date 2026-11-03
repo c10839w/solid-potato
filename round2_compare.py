@@ -96,7 +96,7 @@ def count_fixes(gt, drafts):
     }
 
 
-def draft_with(model, img_path, coco_mode=False):
+def draft_with(model, img_path, coco_mode=False, conf=0.25):
     """画一版草稿。
     coco_mode=True 表示这是 COCO 80 类的原始模型：必须像界面预标注那样
     先按十类过滤、再把编号翻译成我们的 0~9，否则它会把 80 类的框都算进来，
@@ -104,7 +104,7 @@ def draft_with(model, img_path, coco_mode=False):
     import prelabel as P
 
     kw = {"classes": P.COCO_IDS} if coco_mode else {}
-    r = model.predict(str(img_path), conf=0.25, verbose=False, **kw)[0]
+    r = model.predict(str(img_path), conf=conf, verbose=False, **kw)[0]
     out = []
     if r.masks is None:
         return out
@@ -123,6 +123,9 @@ def draft_with(model, img_path, coco_mode=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0, help="只看前 N 张验证图（0=全部）")
+    ap.add_argument("--conf", type=float, default=0.25,
+                    help="两个模型共用的置信度阈值（必须一致才算公平对比）")
+    ap.add_argument("--out", default="round2_report.json", help="结果文件名（记录在 records/ 下）")
     a = ap.parse_args()
 
     cfg = yaml.safe_load((ROOT / "classes.yaml").read_text(encoding="utf-8"))
@@ -142,7 +145,7 @@ def main():
     m2 = YOLO(str(best))
 
     print("=" * 58)
-    print(f"  第二轮回标对比　验证图 {len(imgs)} 张")
+    print(f"  第二轮回标对比　验证图 {len(imgs)} 张　置信度阈值 {a.conf}")
     print("=" * 58)
 
     rows = []
@@ -159,8 +162,8 @@ def main():
         if not gt:
             continue
 
-        a1 = count_fixes(gt, draft_with(m1, img, coco_mode=True))
-        a2 = count_fixes(gt, draft_with(m2, img))
+        a1 = count_fixes(gt, draft_with(m1, img, coco_mode=True, conf=a.conf))
+        a2 = count_fixes(gt, draft_with(m2, img, conf=a.conf))
         for key in tot1:
             tot1[key] += a1[key]
             tot2[key] += a2[key]
@@ -175,6 +178,7 @@ def main():
     n = len(rows)
     summary = {
         "images": n,
+        "conf": a.conf,
         "round1": {**tot1, "per_image": round(tot1["need_fix"] / n, 2) if n else 0},
         "round2": {**tot2, "per_image": round(tot2["need_fix"] / n, 2) if n else 0},
         "improvement_pct": {
@@ -190,7 +194,7 @@ def main():
 
     report = {"summary": summary, "rows": rows, "names": names}
     RECORDS.mkdir(exist_ok=True)
-    (RECORDS / "round2_report.json").write_text(
+    (RECORDS / a.out).write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print("-" * 58)
@@ -199,7 +203,7 @@ def main():
     print(f"  第二轮：{n} 张图共需人工处理 {tot2['need_fix']} 处"
           f"（漏标 {tot2['miss']} / 认错 {tot2['wrong_class']} / 框歪 {tot2['drift']} / 多标 {tot2['extra']}）")
     print(f"  修正量下降 {summary['improvement_pct']['need_fix']}%")
-    print(f"  明细 → {RECORDS / 'round2_report.json'}")
+    print(f"  明细 → {RECORDS / a.out}")
     print("=" * 58)
 
 

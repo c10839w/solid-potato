@@ -248,6 +248,10 @@ def pick_images(ann_path, limit, seed=42):
                       "fmax": round(fmax, 3), "score": round(score, 2)})
     cands.sort(key=lambda x: -x["score"])
 
+    # 已经下载过的图直接排除 —— 否则再跑一次只会「跳过」，永远拿不到新图
+    existing = {p.stem for p in RAW.glob("*.jpg")}
+    cands = [c for c in cands if f"coco_{c['name'].split('.')[0]}" not in existing]
+
     # 贪心挑选：优先补「还缺的类别」，同类信息重复的往后排
     need = {i: TARGET_PER_CLASS for i in range(len(names))}
     chosen, seen_sets = [], {}

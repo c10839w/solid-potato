@@ -177,7 +177,10 @@ def _yaml_text(root, n_val):
 
 
 # ------------------------------------------------------------------ 主流程
-def export(val_ratio=0.2, seed=42, only_human=False, verbose=True):
+def export(val_ratio=0.2, seed=42, only_human=False, verbose=True, val_list=None):
+    """val_list：固定验证集名单（文件名去扩展名）。给了就严格按它划分，
+    不再按比例重算 —— 加了新图之后验证集仍是最早那 40 张人工核对过的图，
+    前后两次训练的 mAP 才可比。"""
     t0 = time.time()
     OUT.mkdir(exist_ok=True)
 
@@ -207,16 +210,22 @@ def export(val_ratio=0.2, seed=42, only_human=False, verbose=True):
     rnd = random.Random(seed)
     n_val = 0
     n_val_human = 0
-    if len(items) >= 2:
+    if val_list:
+        wanted = set(val_list)
+        val_ids = {i for i, (p, _, _) in enumerate(items) if p.stem in wanted}
+        n_val = len(val_ids)
+        n_val_human = len({i for i in val_ids if items[i][2] == "human"})
+        val_ids = set(sorted(val_ids))
+    elif len(items) >= 2:
         n_val = max(1, int(round(len(items) * val_ratio)))
         n_val = min(n_val, len(items) - 1)
-    human_idx = [i for i, (_, _, k) in enumerate(items) if k == "human"]
-    other_idx = [i for i, (_, _, k) in enumerate(items) if k != "human"]
-    rnd.shuffle(human_idx)
-    rnd.shuffle(other_idx)
-    order = human_idx + other_idx
-    val_ids = set(order[:n_val])
-    n_val_human = len(set(human_idx) & val_ids)
+        human_idx = [i for i, (_, _, k) in enumerate(items) if k == "human"]
+        other_idx = [i for i, (_, _, k) in enumerate(items) if k != "human"]
+        rnd.shuffle(human_idx)
+        rnd.shuffle(other_idx)
+        order = human_idx + other_idx
+        val_ids = set(order[:n_val])
+        n_val_human = len(set(human_idx) & val_ids)
 
     _fresh_dirs()
 
@@ -333,5 +342,13 @@ if __name__ == "__main__":
     ap.add_argument("--val-ratio", type=float, default=0.2, help="验证集比例，默认 0.2")
     ap.add_argument("--seed", type=int, default=42, help="划分随机种子，默认 42")
     ap.add_argument("--only-human", action="store_true", help="只导出人工改过的图")
+    ap.add_argument("--val-list", default=None,
+                    help="固定验证集名单文件（每行一个图片名），加了新图后仍用同一套验证集")
     a = ap.parse_args()
-    export(val_ratio=a.val_ratio, seed=a.seed, only_human=a.only_human)
+    val_list = None
+    if a.val_list:
+        vl_path = Path(a.val_list)
+        if not vl_path.is_absolute():
+            vl_path = ROOT / vl_path
+        val_list = [ln.strip() for ln in vl_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    export(val_ratio=a.val_ratio, seed=a.seed, only_human=a.only_human, val_list=val_list)

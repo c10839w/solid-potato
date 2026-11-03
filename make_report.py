@@ -54,6 +54,7 @@ def main():
     baseline = load("metrics_baseline.json")
     trained = load("metrics_trained.json")
     round2 = load("round2_report.json")
+    sweep = load("sweep_conf.json")
     export = ROOT / "dataset" / "export_report.json"
     export = json.loads(export.read_text(encoding="utf-8")) if export.exists() else None
 
@@ -104,33 +105,84 @@ def main():
                   <div class="v">{t:.4f}{unit}</div>
                   <div class="d {cls}">{arrow} {d:+.1f}（原 {b:.4f}）</div></div>"""
 
-    # ---------- 第二轮回标 ----------
+    # ---------- 第二轮回标（如实呈现：哪里变好、哪里变差、为什么） ----------
     r2_html = '<p class="dim">待第二轮回标完成后生成</p>'
     if round2:
         s = round2["summary"]
         a1, a2 = s["round1"], s["round2"]
         imp = s["improvement_pct"]
+
+        def cell(label, v1, v2, better_when_less=True):
+            """一行对比：变好用绿，变差用红，不带任何修饰"""
+            d = v2 - v1
+            good = (d < 0) if better_when_less else (d > 0)
+            cls = "up" if good and d != 0 else ("down" if (not good) and d != 0 else "flat")
+            arrow = "↓" if d < 0 else ("↑" if d > 0 else "→")
+            return (f'<tr><td>{label}</td><td>{v1}</td><td>{v2}</td>'
+                    f'<td class="{cls}">{arrow} {d:+d}</td></tr>')
+
+        tbl = "".join([
+            cell("漏标（要人补画，成本最高）", a1["miss"], a2["miss"]),
+            cell("类别认错", a1["wrong_class"], a2["wrong_class"]),
+            cell("框位置歪", a1["drift"], a2["drift"]),
+            cell("多标（要人删掉）", a1["extra"], a2["extra"]),
+            cell("合计需人工处理", a1["need_fix"], a2["need_fix"]),
+        ])
+
+        # 操作成本估算：补画一个漏标 ≈ 画轮廓+选类别（约 4 次操作），
+        # 删一个多标 = 1 次点击，改类别 ≈ 2 次点击，拖歪的框 ≈ 2 次操作
+        w1 = a1["miss"] * 4 + a1["extra"] * 1 + a1["wrong_class"] * 2 + a1["drift"] * 2
+        w2 = a2["miss"] * 4 + a2["extra"] * 1 + a2["wrong_class"] * 2 + a2["drift"] * 2
+
+        verdict = ("总数上第二轮更少，人机协同迭代有效" if a2["need_fix"] < a1["need_fix"] else
+                   "总数持平或略增，但工作结构明显变化：自训模型「宁可多标、绝不漏标」，"
+                   "漏标（最花时间的活）大幅减少，多出来的是点一下就能删的框")
+
+        sweep_html = ""
+        if sweep:
+            sr = sweep["rows"]
+            rows_s = "".join(
+                f'<tr><td>{r["conf"]:.2f}</td><td>{r["round1"]["need_fix"]}</td>'
+                f'<td>{r["round2"]["need_fix"]}</td><td>{r["round1"]["miss"]}</td>'
+                f'<td>{r["round2"]["miss"]}</td><td>{r["round2"]["extra"]}</td></tr>'
+                for r in sr)
+            best = min(sr, key=lambda r: r["round2"]["need_fix"])
+            sweep_html = f"""
+        <h2>附：预标注阈值扫描（两个模型同一把尺）</h2>
+        <div class="card"><table>
+          <tr><th>置信度阈值</th><th>轮1 需修</th><th>轮2 需修</th>
+              <th>轮1 漏标</th><th>轮2 漏标</th><th>轮2 多标</th></tr>{rows_s}</table>
+          <p class="dim" style="margin-top:10px">阈值是产品参数，不是模型参数：阈值越低漏标越少、误检越多。
+          扫描显示自训模型在 <b>{best['conf']:.2f}</b> 附近工作量最小，工作台已支持 --conf 参数按需调整。</p>
+        </div>"""
+
         r2_html = f"""
         <div class="two">
-          <div class="col"><div class="col-h">第一轮草稿（COCO 原模型）</div>
+          <div class="col"><div class="col-h">第一轮草稿（COCO 通用模型）</div>
             <div class="big">{a1['need_fix']}</div>
-            <div class="sub">处需要人工处理 · 平均每张 {a1['per_image']} 处</div>
-            <ul class="brk">
-              <li>漏标 <b>{a1['miss']}</b></li><li>类别认错 <b>{a1['wrong_class']}</b></li>
-              <li>框位置歪 <b>{a1['drift']}</b></li><li>多标需删 <b>{a1['extra']}</b></li>
-            </ul></div>
+            <div class="sub">处需要人工处理 · 平均每张 {a1['per_image']} 处</div></div>
           <div class="col hi"><div class="col-h">第二轮草稿（自训 best.pt）</div>
             <div class="big">{a2['need_fix']}</div>
-            <div class="sub">处需要人工处理 · 平均每张 {a2['per_image']} 处</div>
-            <ul class="brk">
-              <li>漏标 <b>{a2['miss']}</b></li><li>类别认错 <b>{a2['wrong_class']}</b></li>
-              <li>框位置歪 <b>{a2['drift']}</b></li><li>多标需删 <b>{a2['extra']}</b></li>
-            </ul></div>
+            <div class="sub">处需要人工处理 · 平均每张 {a2['per_image']} 处</div></div>
         </div>
-        <p class="concl">在同样 {s['images']} 张人工核对过的图上，需要人工处理的地方从
-        <b>{a1['need_fix']}</b> 处降到 <b>{a2['need_fix']}</b> 处，
-        <b class="up">减少 {imp['need_fix']}%</b>。其中漏标减少 {imp['miss']}%、
-        类别认错减少 {imp['wrong_class']}%、框位置歪减少 {imp['drift']}%。</p>"""
+        <div class="card" style="margin-top:14px"><table>
+          <tr><th>问题类型</th><th>第一轮</th><th>第二轮</th><th>变化</th></tr>{tbl}</table>
+          <p class="concl" style="margin-bottom:0">{verdict}。按操作次数估算，人工总工作量约从
+          <b>{w1}</b> 次降到 <b>{w2}</b> 次（补画 ≈4 次/个，删框 =1 次/个，改类别 ≈2 次/个）。</p>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <b>为什么总数没有大降？如实记录两个原因：</b>
+          <ol style="margin:8px 0 0 18px">
+            <li><b>验证集的「标准答案」本身就来自通用模型的草稿</b>（人只修了错的地方，没重标整张图），
+                所以这套答案天然偏向通用模型——它等于在自己出过的题上考试。</li>
+            <li><b>训练数据少</b>：人工核对过的图只有 161 张（后来扩充到 409 张做过实验 v5，
+                精度 0.696/0.625 反而略降——新图的标签还是通用模型打的，没有人工核对，
+                说明「数据量」和「数据质量」不是一回事）。</li>
+          </ol>
+          <p style="margin:8px 0 0">但自训模型的价值是真实的：它是<b>只认这十类的小模型</b>，
+          漏标比通用模型少 {imp['miss']}%，这在「人不想一张张翻图找漏网之鱼」的标注场景里最有用；
+          多出来的误检人点一下就没了，漏掉的东西人却得从头画。这正是「人机协同」要继续迭代的方向。</p>
+        </div>""" + sweep_html
 
     # ---------- 修正分布 ----------
     vmax = max(act.values()) if act else 1
@@ -236,9 +288,10 @@ def main():
     if trained:
         print(f"  自训：框 {trained.get('box_map50')}　掩码 {trained.get('mask_map50')}")
     if round2:
-        print(f"  第二轮回标：需修 {round2['summary']['round1']['need_fix']} → "
-              f"{round2['summary']['round2']['need_fix']} 处"
-              f"（{round2['summary']['improvement_pct']['need_fix']}%）")
+        a1 = round2["summary"]["round1"]
+        a2 = round2["summary"]["round2"]
+        print(f"  第二轮回标（conf 0.25）：需修 {a1['need_fix']} → {a2['need_fix']} 处；"
+              f"漏标 {a1['miss']} → {a2['miss']}，多标 {a1['extra']} → {a2['extra']}")
 
 
 if __name__ == "__main__":

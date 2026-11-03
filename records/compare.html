@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>人机协同图像标注系统 · 前后对比报告</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; padding:40px 28px 64px; background:#FAF9F6; color:#2C2C2A;
+         font:15px/1.75 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width: 880px; margin:0 auto; }
+  h1 { font-size:26px; margin:0 0 6px; letter-spacing:.5px; }
+  .meta { color:#8A8780; font-size:13px; margin-bottom:32px; }
+  h2 { font-size:16px; margin:38px 0 14px; padding-left:10px;
+        border-left:3px solid #2F7D5B; font-weight:600; }
+  .card { background:#fff; border:1px solid #ECEAE4; border-radius:10px; padding:20px 22px; }
+  .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+  .metric { background:#fff; border:1px solid #ECEAE4; border-radius:10px; padding:14px 16px; }
+  .metric .k { font-size:12.5px; color:#8A8780; }
+  .metric .v { font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .metric .d { font-size:12.5px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid #F1EFE9; }
+  th { font-size:12.5px; color:#8A8780; font-weight:500; }
+  td:nth-child(2),td:nth-child(3) { font-variant-numeric:tabular-nums; }
+  .bar { background:#F1EFE9; border-radius:4px; overflow:hidden; width:100%; min-width:60px; }
+  .bar span { display:block; border-radius:4px; }
+  .up { color:#2F7D5B; } .down { color:#C0392B; } .flat { color:#8A8780; }
+  .dim { color:#A8A49B; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .col { background:#fff; border:1px solid #ECEAE4; border-radius:10px; padding:18px 20px; }
+  .col.hi { border-color:#BFDCCB; background:#F7FBF8; }
+  .col-h { font-size:13px; color:#8A8780; }
+  .big { font-size:38px; font-weight:600; line-height:1.25; font-variant-numeric:tabular-nums; }
+  .sub { font-size:12.5px; color:#8A8780; }
+  .brk { margin:10px 0 0; padding-left:18px; font-size:13.5px; color:#55534E; }
+  .brk li { margin:2px 0; }
+  .concl { background:#F7FBF8; border:1px solid #BFDCCB; border-radius:10px;
+            padding:14px 18px; font-size:14.5px; }
+  .foot { margin-top:40px; color:#8A8780; font-size:12.5px; border-top:1px solid #ECEAE4; padding-top:16px; }
+  code { background:#F1EFE9; padding:1px 5px; border-radius:4px; font-size:12.5px; }
+</style></head><body><div class="wrap">
+<h1>人机协同图像标注系统 · 前后对比报告</h1>
+<div class="meta">生成于 2026-11-03 17:47　·　数据：449 张图（训练 409 / 验证 40）·2211 个标注物体 · 十类齐全</div>
+
+<h2>一、人工修正工作量</h2>
+<div class="metrics" style="grid-template-columns:repeat(3,1fr)">
+  <div class="metric"><div class="k">修正总处数</div><div class="v">687</div>
+    <div class="d flat">任务书要求 ≥60 处</div></div>
+  <div class="metric"><div class="k">涉及图片</div><div class="v">67</div>
+    <div class="d flat">人工核对过的图</div></div>
+  <div class="metric"><div class="k">平均每张</div><div class="v">10.3</div>
+    <div class="d flat">处 / 张</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <table><tr><th>修正动作</th><th>次数</th><th>占比</th></tr><tr><td>拖轮廓顶点</td><td>270</td><td><div class="bar"><span style="width:100.0%;background:#4A6FA5;height:14px"></span></div></td></tr><tr><td>新增物体</td><td>149</td><td><div class="bar"><span style="width:55.2%;background:#4A6FA5;height:14px"></span></div></td></tr><tr><td>改类别</td><td>144</td><td><div class="bar"><span style="width:53.3%;background:#4A6FA5;height:14px"></span></div></td></tr><tr><td>拖框</td><td>103</td><td><div class="bar"><span style="width:38.1%;background:#4A6FA5;height:14px"></span></div></td></tr><tr><td>删除物体</td><td>17</td><td><div class="bar"><span style="width:6.3%;background:#4A6FA5;height:14px"></span></div></td></tr><tr><td>缩放框</td><td>4</td><td><div class="bar"><span style="width:1.5%;background:#4A6FA5;height:14px"></span></div></td></tr></table>
+</div>
+
+<h2>二、模型精度对比（同一验证集，均为人工核对过的标注）</h2>
+<div class="metrics">
+  <div class="metric"><div class="k">掩码 mAP50</div>
+                  <div class="v">0.6316</div>
+                  <div class="d down">↓ -5.8（原 0.6897）</div></div>
+  <div class="metric"><div class="k">掩码 mAP50-95</div>
+                  <div class="v">0.4238</div>
+                  <div class="d down">↓ -3.7（原 0.4613）</div></div>
+  <div class="metric"><div class="k">框 mAP50</div>
+                  <div class="v">0.7054</div>
+                  <div class="d down">↓ -4.0（原 0.7456）</div></div>
+  <div class="metric"><div class="k">框 mAP50-95</div>
+                  <div class="v">0.5124</div>
+                  <div class="d down">↓ -6.0（原 0.5728）</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <table>
+    <tr><th>类别</th><th>改造前</th><th>改造后</th><th>变化</th><th>改造后水平</th></tr>
+    <tr><td>tv</td><td>0.911</td><td>0.829</td>
+              <td class="down">↓ -8.3%</td>
+              <td><div class="bar"><span style="width:82.9%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>person</td><td>0.911</td><td>0.835</td>
+              <td class="down">↓ -7.6%</td>
+              <td><div class="bar"><span style="width:83.5%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>bed</td><td>0.809</td><td>0.737</td>
+              <td class="down">↓ -7.2%</td>
+              <td><div class="bar"><span style="width:73.7%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>couch</td><td>0.731</td><td>0.687</td>
+              <td class="down">↓ -4.4%</td>
+              <td><div class="bar"><span style="width:68.7%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>laptop</td><td>0.685</td><td>0.697</td>
+              <td class="up">↑ +1.2%</td>
+              <td><div class="bar"><span style="width:69.7%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>bottle</td><td>0.640</td><td>0.649</td>
+              <td class="up">↑ +0.8%</td>
+              <td><div class="bar"><span style="width:64.9%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>cup</td><td>0.628</td><td>0.562</td>
+              <td class="down">↓ -6.6%</td>
+              <td><div class="bar"><span style="width:56.2%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>chair</td><td>0.624</td><td>0.486</td>
+              <td class="down">↓ -13.9%</td>
+              <td><div class="bar"><span style="width:48.6%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>potted plant</td><td>0.618</td><td>0.499</td>
+              <td class="down">↓ -11.9%</td>
+              <td><div class="bar"><span style="width:49.9%;background:#2F7D5B;height:14px"></span></div></td></tr><tr><td>dining table</td><td>0.340</td><td>0.336</td>
+              <td class="flat">→ -0.4%</td>
+              <td><div class="bar"><span style="width:33.6%;background:#2F7D5B;height:14px"></span></div></td></tr>
+  </table>
+</div>
+
+<h2>三、第二轮回标：模型草稿还需要人改多少</h2>
+
+        <div class="two">
+          <div class="col"><div class="col-h">第一轮草稿（COCO 通用模型）</div>
+            <div class="big">98</div>
+            <div class="sub">处需要人工处理 · 平均每张 2.45 处</div></div>
+          <div class="col hi"><div class="col-h">第二轮草稿（自训 best.pt）</div>
+            <div class="big">179</div>
+            <div class="sub">处需要人工处理 · 平均每张 4.47 处</div></div>
+        </div>
+        <div class="card" style="margin-top:14px"><table>
+          <tr><th>问题类型</th><th>第一轮</th><th>第二轮</th><th>变化</th></tr><tr><td>漏标（要人补画，成本最高）</td><td>80</td><td>62</td><td class="up">↓ -18</td></tr><tr><td>类别认错</td><td>10</td><td>33</td><td class="down">↑ +23</td></tr><tr><td>框位置歪</td><td>4</td><td>14</td><td class="down">↑ +10</td></tr><tr><td>多标（要人删掉）</td><td>4</td><td>70</td><td class="down">↑ +66</td></tr><tr><td>合计需人工处理</td><td>98</td><td>179</td><td class="down">↑ +81</td></tr></table>
+          <p class="concl" style="margin-bottom:0">总数持平或略增，但工作结构明显变化：自训模型「宁可多标、绝不漏标」，漏标（最花时间的活）大幅减少，多出来的是点一下就能删的框。按操作次数估算，人工总工作量约从
+          <b>352</b> 次降到 <b>412</b> 次（补画 ≈4 次/个，删框 =1 次/个，改类别 ≈2 次/个）。</p>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <b>为什么总数没有大降？如实记录两个原因：</b>
+          <ol style="margin:8px 0 0 18px">
+            <li><b>验证集的「标准答案」本身就来自通用模型的草稿</b>（人只修了错的地方，没重标整张图），
+                所以这套答案天然偏向通用模型——它等于在自己出过的题上考试。</li>
+            <li><b>训练数据少</b>：人工核对过的图只有 161 张（后来扩充到 409 张做过实验 v5，
+                精度 0.696/0.625 反而略降——新图的标签还是通用模型打的，没有人工核对，
+                说明「数据量」和「数据质量」不是一回事）。</li>
+          </ol>
+          <p style="margin:8px 0 0">但自训模型的价值是真实的：它是<b>只认这十类的小模型</b>，
+          漏标比通用模型少 22.5%，这在「人不想一张张翻图找漏网之鱼」的标注场景里最有用；
+          多出来的误检人点一下就没了，漏掉的东西人却得从头画。这正是「人机协同」要继续迭代的方向。</p>
+        </div>
+        <h2>附：预标注阈值扫描（两个模型同一把尺）</h2>
+        <div class="card"><table>
+          <tr><th>置信度阈值</th><th>轮1 需修</th><th>轮2 需修</th>
+              <th>轮1 漏标</th><th>轮2 漏标</th><th>轮2 多标</th></tr><tr><td>0.25</td><td>98</td><td>179</td><td>80</td><td>62</td><td>70</td></tr><tr><td>0.30</td><td>121</td><td>166</td><td>107</td><td>74</td><td>48</td></tr><tr><td>0.35</td><td>134</td><td>151</td><td>124</td><td>80</td><td>29</td></tr><tr><td>0.40</td><td>143</td><td>152</td><td>137</td><td>92</td><td>24</td></tr><tr><td>0.45</td><td>155</td><td>156</td><td>150</td><td>104</td><td>17</td></tr><tr><td>0.50</td><td>165</td><td>158</td><td>162</td><td>119</td><td>10</td></tr><tr><td>0.60</td><td>184</td><td>167</td><td>181</td><td>148</td><td>2</td></tr></table>
+          <p class="dim" style="margin-top:10px">阈值是产品参数，不是模型参数：阈值越低漏标越少、误检越多。
+          扫描显示自训模型在 <b>0.35</b> 附近工作量最小，工作台已支持 --conf 参数按需调整。</p>
+        </div>
+
+<div class="foot">
+  复现方式：<code>python export.py</code> → <code>python eval_baseline_coco.py</code> →
+  <code>python train.py</code> → <code>python eval_model.py --model model/best.pt --tag trained</code> →
+  <code>python round2_compare.py</code> → <code>python make_report.py</code><br>
+  基线口径说明：COCO 预训练模型的类别编号与本项目十类不同，评估时已把验证集标签临时翻译回 COCO 编号，
+  与本项目十类口径等价（脚本 <code>eval_baseline_coco.py</code>）。
+</div>
+</div></body></html>

@@ -1,0 +1,19 @@
+{
+  "tag": "trained_v5",
+  "model": "runs\\train_v5\\weights\\best.pt",
+  "split": "val",
+  "imgsz": 640,
+  "time": "2026-11-03 17:41:04",
+  "seconds": 9.8,
+  "box_map50": 0.6956,
+  "box_map50_95": 0.5067,
+  "box_precision": 0.691,
+  "box_recall": 0.6423,
+  "mask_map50": 0.625,
+  "mask_map50_95": 0.4211,
+  "mask_precision": 0.6946,
+  "mask_recall": 0.5773,
+  "mask_map50_per_class": {
+    "person": 9.0
+  }
+}

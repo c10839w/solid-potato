@@ -25,10 +25,18 @@ import yaml
 ROOT = Path(__file__).parent
 DATASET = ROOT / "dataset"
 RECORDS = ROOT / "records"
-TMP = DATASET / "_cocoval"
+# 每次评估用一个独立临时目录：写死的目录名会被"清理"卡住（而且并发跑会互相覆盖），
+# 带进程号既不用删东西，也不会读到上一次的残留
+TMP = DATASET / f"_cocoval_{__import__('os').getpid()}"
 
 
 def main():
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--imgsz", type=int, default=640,
+                    help="评估尺寸，必须与自训模型的评估尺寸一致，否则比较不公平")
+    _a = ap.parse_args()
     cfg = yaml.safe_load((ROOT / "classes.yaml").read_text(encoding="utf-8"))
     names = cfg["names"]
     coco_ids = cfg["coco_id"]              # 我们的 0~9 → COCO 编号
@@ -79,7 +87,7 @@ def main():
     print(f"  基线评估（COCO 编号对齐后）　验证图 {n_lb} 张")
     print("=" * 58)
 
-    r = model.val(data=str(yml), split="val", imgsz=512, conf=0.001,
+    r = model.val(data=str(yml), split="val", imgsz=_a.imgsz, conf=0.001,
                   device="cpu", workers=0, plots=False, verbose=False)
 
     def collect(m):
@@ -100,7 +108,7 @@ def main():
         "tag": "baseline",
         "model": "yolo26n-seg.pt（COCO 预训练，未用本数据集训练）",
         "split": "val",
-        "imgsz": 512,
+        "imgsz": _a.imgsz,
         "note": "标签已临时翻译成 COCO 编号再评估，与本项目 10 类口径等价",
         "val_images": n_lb,
         "box_map50": box_map50,

@@ -66,9 +66,10 @@ def main():
     names = r.names
     per_class = {}
     # 每个类别的 mAP50，用来看「哪几类变好了、哪几类还是不行」
+    # 注意配对方向：ap_class_index 里是类别号，ap50 里才是 AP 值，写反会得到 {'person': 9.0} 这种鬼数据
     if seg is not None and getattr(seg, "ap_class_index", None) is not None:
-        for i, c in zip(seg.ap_class_index, seg.ap50):
-            per_class[names[int(c)]] = round(float(i), 4)
+        for c, ap in zip(seg.ap_class_index, seg.ap50):
+            per_class[names[int(c)]] = round(float(ap), 4)
 
     metrics = {
         "tag": a.tag,
@@ -82,6 +83,7 @@ def main():
         "box_map50_95": round(float(box.map), 4),
         "box_precision": round(float(box.mp), 4),
         "box_recall": round(float(box.mr), 4),
+        "box_map50_per_class": per_class,
     }
     if seg is not None:
         # 掩码：M = Mask

@@ -1,0 +1,124 @@
+{
+  "images": 40,
+  "rows": [
+    {
+      "conf": 0.25,
+      "round1": {
+        "need_fix": 98,
+        "miss": 80,
+        "wrong_class": 10,
+        "drift": 4,
+        "extra": 4
+      },
+      "round2": {
+        "need_fix": 179,
+        "miss": 62,
+        "wrong_class": 33,
+        "drift": 14,
+        "extra": 70
+      }
+    },
+    {
+      "conf": 0.3,
+      "round1": {
+        "need_fix": 121,
+        "miss": 107,
+        "wrong_class": 9,
+        "drift": 2,
+        "extra": 3
+      },
+      "round2": {
+        "need_fix": 166,
+        "miss": 74,
+        "wrong_class": 31,
+        "drift": 13,
+        "extra": 48
+      }
+    },
+    {
+      "conf": 0.35,
+      "round1": {
+        "need_fix": 134,
+        "miss": 124,
+        "wrong_class": 7,
+        "drift": 2,
+        "extra": 1
+      },
+      "round2": {
+        "need_fix": 151,
+        "miss": 80,
+        "wrong_class": 31,
+        "drift": 11,
+        "extra": 29
+      }
+    },
+    {
+      "conf": 0.4,
+      "round1": {
+        "need_fix": 143,
+        "miss": 137,
+        "wrong_class": 5,
+        "drift": 0,
+        "extra": 1
+      },
+      "round2": {
+        "need_fix": 152,
+        "miss": 92,
+        "wrong_class": 29,
+        "drift": 7,
+        "extra": 24
+      }
+    },
+    {
+      "conf": 0.45,
+      "round1": {
+        "need_fix": 155,
+        "miss": 150,
+        "wrong_class": 4,
+        "drift": 0,
+        "extra": 1
+      },
+      "round2": {
+        "need_fix": 156,
+        "miss": 104,
+        "wrong_class": 27,
+        "drift": 8,
+        "extra": 17
+      }
+    },
+    {
+      "conf": 0.5,
+      "round1": {
+        "need_fix": 165,
+        "miss": 162,
+        "wrong_class": 3,
+        "drift": 0,
+        "extra": 0
+      },
+      "round2": {
+        "need_fix": 158,
+        "miss": 119,
+        "wrong_class": 22,
+        "drift": 7,
+        "extra": 10
+      }
+    },
+    {
+      "conf": 0.6,
+      "round1": {
+        "need_fix": 184,
+        "miss": 181,
+        "wrong_class": 3,
+        "drift": 0,
+        "extra": 0
+      },
+      "round2": {
+        "need_fix": 167,
+        "miss": 148,
+        "wrong_class": 14,
+        "drift": 3,
+        "extra": 2
+      }
+    }
+  ]
+}

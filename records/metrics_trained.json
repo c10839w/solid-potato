@@ -1,0 +1,40 @@
+{
+  "tag": "trained",
+  "model": "model\\best.pt",
+  "split": "val",
+  "imgsz": 640,
+  "time": "2026-11-03 17:47:49",
+  "seconds": 9.1,
+  "box_map50": 0.7054,
+  "box_map50_95": 0.5124,
+  "box_precision": 0.7612,
+  "box_recall": 0.6317,
+  "box_map50_per_class": {
+    "person": 0.8351,
+    "chair": 0.4856,
+    "dining table": 0.3359,
+    "couch": 0.687,
+    "tv": 0.8286,
+    "laptop": 0.6965,
+    "cup": 0.5621,
+    "bottle": 0.6486,
+    "potted plant": 0.499,
+    "bed": 0.7371
+  },
+  "mask_map50": 0.6316,
+  "mask_map50_95": 0.4238,
+  "mask_precision": 0.8134,
+  "mask_recall": 0.547,
+  "mask_map50_per_class": {
+    "person": 0.8351,
+    "chair": 0.4856,
+    "dining table": 0.3359,
+    "couch": 0.687,
+    "tv": 0.8286,
+    "laptop": 0.6965,
+    "cup": 0.5621,
+    "bottle": 0.6486,
+    "potted plant": 0.499,
+    "bed": 0.7371
+  }
+}

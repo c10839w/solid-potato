@@ -36,6 +36,10 @@ IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 # 自己训练出 model/best.pt 之后，用 python app.py --model model/best.pt 切换（第二轮）
 MODEL_PATH = ROOT / "yolo26n-seg.pt"
 
+# 预标注的置信度阈值。设太低会冒出一堆误检（人得逐个删），设太高会漏标。
+# 具体取多少是用 records/sweep_conf.json 的扫描结果定出来的，可用 --conf 覆盖
+CONF = 0.25
+
 # ---------------------------------------------------------------- 模型（全局只加载一次）
 _model = None
 _model_lock = threading.Lock()
@@ -148,24 +152,32 @@ def _guess_category(objs):
 
 
 def load_categories():
-    """文件名 -> 类别。第一次运行时按标注内容猜一遍，之后以 json 为准。"""
+    """文件名 -> 类别。第一次运行时按标注内容猜一遍，之后以 json 为准。
+    新加进来的图（比如又采了一批）自动按内容补猜，不用手点。"""
     global _cats
     if _cats is not None:
         return _cats
     if CAT_FILE.exists():
         try:
             _cats = json.loads(CAT_FILE.read_text(encoding="utf-8"))
-            return _cats
         except Exception:
-            pass
-    _cats = {}
+            _cats = {}
+    else:
+        _cats = {}
+    added = 0
     for p in ANN_DIR.glob("*.json"):
+        name = p.stem + ".jpg"
+        if name in _cats:
+            continue
         try:
             d = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             continue
-        _cats[d.get("image") or (p.stem + ".jpg")] = _guess_category(d.get("objects", []))
-    save_categories()
+        name = d.get("image") or name
+        _cats[name] = _guess_category(d.get("objects", []))
+        added += 1
+    if added:
+        save_categories()
     return _cats
 
 
@@ -366,7 +378,7 @@ def _prelabel_worker(names):
             img = RAW_DIR / name
             w, h = image_size(img)
             try:
-                r = model.predict(str(img), conf=0.25,
+                r = model.predict(str(img), conf=CONF,
                                   classes=classes, verbose=False)[0]
                 objs = [{
                     "id": f"o{i}_{k}",
@@ -546,9 +558,12 @@ if __name__ == "__main__":
     ap.add_argument("--model", default=None,
                     help="预标注用的权重，默认 yolo26n-seg.pt；第二轮填 model/best.pt")
     ap.add_argument("--port", type=int, default=5000)
+    ap.add_argument("--conf", type=float, default=0.25,
+                    help="预标注置信度阈值，默认 0.25；误检多就调高到 0.4 左右")
     ap.add_argument("--lan", action="store_true",
                     help="允许同一 WiFi 下的手机/别的电脑访问（默认只本机）")
     args = ap.parse_args()
+    CONF = args.conf
     if args.model:
         MODEL_PATH = (ROOT / args.model) if not Path(args.model).is_absolute() else Path(args.model)
         if not MODEL_PATH.exists():

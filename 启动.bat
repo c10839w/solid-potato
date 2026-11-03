@@ -13,6 +13,11 @@ if not exist "%CONDA%\Scripts\activate.bat" (
 )
 
 call "%CONDA%\Scripts\activate.bat" imglabel
+
+rem 第二轮：如果存在自己训练的权重，就优先用它做预标注
+set "MODEL_ARGS="
+if exist "model\best.pt" set "MODEL_ARGS=--model model/best.pt"
+
 echo 正在启动，浏览器会自动打开 http://127.0.0.1:5000
-python app.py
+python app.py %MODEL_ARGS%
 pause
