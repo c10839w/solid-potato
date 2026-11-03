@@ -34,6 +34,7 @@ INCLUDE_FILES = [
     "eval_model.py", "eval_baseline_coco.py", "round2_compare.py",
     "make_report.py", "fetch_coco.py", "demo_one_image.py",
     "启动.bat", "requirements.txt", "classes.yaml", "README.md", "ai_log.md",
+    "答辩演示.md", "records/val_split.txt", "records/categories.json",
     ".gitignore",
 ]
 INCLUDE_DIRS = [
@@ -58,13 +59,21 @@ def main():
     out = OUT_DIR / f"人机协同图像标注系统_交付包{stamp}.zip"
 
     n_files, n_bytes = 0, 0
+    seen = set()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        def add(p, arcname):
+            nonlocal n_files, n_bytes
+            if arcname in seen:          # 两个通配规则都盖到的文件只写一次，避免 zip 里重名
+                return
+            seen.add(arcname)
+            z.write(p, arcname=arcname)
+            n_files += 1
+            n_bytes += p.stat().st_size
+
         for name in INCLUDE_FILES:
             p = ROOT / name
             if p.exists():
-                z.write(p, arcname=name)
-                n_files += 1
-                n_bytes += p.stat().st_size
+                add(p, name)
 
         for dirname, patterns in INCLUDE_DIRS:
             d = ROOT / dirname
@@ -79,9 +88,7 @@ def main():
                 if any(part in {"__pycache__", "runs", "_cache", "_cand", "_cocoval"}
                        for part in p.parts):
                     continue
-                z.write(p, arcname=p.relative_to(ROOT).as_posix())
-                n_files += 1
-                n_bytes += p.stat().st_size
+                add(p, p.relative_to(ROOT).as_posix())
 
         # 附一份打包说明，评委打开就知道怎么跑
         readme = f"""交付包内容说明
@@ -96,26 +103,27 @@ def main():
     5) 浏览器打开 http://127.0.0.1:5000
 
 二、自训权重
-    model/best.pt 是用本项目数据集训练得到的（200 张室内图 / 1126 个标注 / 30 轮）
+    model/best.pt 是用本项目数据集训练得到的（461 张室内图 / 2211 个标注 / 50 轮 / 640 尺寸）
     用第二轮精度对比：python app.py --model model/best.pt
     精度对比报告：records/compare.html
 
 三、数据集没有全被打包（体积原因）
     原始图片 data/raw 与掩码 dataset/masks 体积大，但都能重建：
-      python fetch_coco.py            # 从 COCO 按标注重新下载这 200 张室内图
+      python fetch_coco.py            # 从 COCO 按标注重新下载这 461 张室内图
       python export.py                # 重新导出检测标签 / 分割标签 / 两种掩码
-    标注本身（records/annotations，202 份 json）已全部打包，里面含人工修正结果。
+    标注本身（records/annotations，449 份 json）已全部打包，里面含人工修正结果。
 
 四、复现全流程
     python fetch_coco.py            # 采集（可选，已经有图可跳过）
     python prelabel_all.py          # 批量预标注，生成草稿
-    python app.py                   # 人工修正，改满 60 处以上
+    python app.py                   # 人工修正（本项目改了 67 张图共 687 处）
     python export.py                # 导出数据集
     python eval_baseline_coco.py    # 第一轮基线精度
     python train.py                 # 训练，产出 model/best.pt
     python eval_model.py --model model/best.pt --tag trained
-    python round2_compare.py        # 第二轮回标：草稿需修改处数对比
+    python round2_compare.py        # 第二轮回标：草稿需修改处数对比（--conf 可扫阈值）
     python make_report.py           # 生成 records/compare.html
+    界面截图在 screenshots/，四个页面的样子先看它
 """
         z.writestr("交付说明.txt", readme)
         n_files += 1
