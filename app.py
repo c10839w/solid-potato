@@ -17,6 +17,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
 import prelabel as P
+import track_engine as T
 
 ROOT = Path(__file__).parent
 RAW_DIR = ROOT / "data" / "raw"
@@ -282,6 +283,12 @@ def gallery():
     return send_from_directory(app.static_folder, "gallery.html")
 
 
+@app.route("/tracking")
+def tracking_page():
+    """人员识别打卡 / 同场景追踪（新加的验证页）"""
+    return send_from_directory(app.static_folder, "track.html")
+
+
 @app.route("/api/config")
 def api_config():
     return jsonify({"names": P.NAMES, "zh": P.ZH})
@@ -545,6 +552,163 @@ def api_upload():
 
 
 # ---------------------------------------------------------------- 启动
+# ---------------------------------------------------------------- 人员识别打卡 / 同场景追踪
+_track_model = None
+_track_lock = threading.Lock()
+_video_cache = {}
+
+
+def get_track_model():
+    """追踪必须用 COCO 预训练权重（含 person 类）。
+
+    注意：--model model/best.pt 是十类家具自训权重，虽然 0 号也是 person，
+    但它是为室内家具微调的，场馆画面召回率差，所以这里固定用通用权重。
+    """
+    global _track_model
+    with _track_lock:
+        if _track_model is None:
+            from ultralytics import YOLO
+            _track_model = YOLO(str(ROOT / "yolo26n-seg.pt"))
+        return _track_model
+
+
+def list_track_videos():
+    """列出可分析的视频：项目内的演示视频 + D:/sports_checkin/videos 下采集的视频。"""
+    import cv2
+    out = []
+    for d in T.VIDEO_DIRS:
+        if not d.exists():
+            continue
+        for p in sorted(d.glob("*.mp4")):
+            if p.name.startswith("result"):
+                continue
+            key = str(p)
+            if key not in _video_cache:
+                cap = cv2.VideoCapture(key)
+                fps = cap.get(cv2.CAP_PROP_FPS) or 0
+                n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                cap.release()
+                _video_cache[key] = {
+                    "fps": round(fps, 1), "frames": n,
+                    "seconds": round(n / fps, 1) if fps else 0,
+                    "width": w, "height": h,
+                    "size_mb": round(p.stat().st_size / 1048576, 1),
+                }
+            out.append({"name": p.name, "path": key, **_video_cache[key]})
+    return out
+
+
+@app.route("/api/track/upload", methods=["POST"])
+def api_track_upload():
+    """上传一段自己的视频（小文件用；4K 大文件建议直接放到 videos 目录）。"""
+    import re
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify({"ok": False, "message": "没有收到文件"}), 400
+    stem = re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", Path(f.filename).stem)[:40]
+    dst = T.OUT_ROOT / (stem + ".mp4")
+    i = 1
+    while dst.exists():
+        dst = T.OUT_ROOT / f"{stem}_{i}.mp4"
+        i += 1
+    f.save(str(dst))
+    _video_cache.pop(str(dst), None)
+    return jsonify({"ok": True, "name": dst.name,
+                    "message": f"已上传 {dst.name}"})
+
+
+@app.route("/api/track/info")
+def api_track_info():
+    g = T.load_gallery()
+    return jsonify({
+        "mode": T.identity_mode(),
+        "gallery": [{"name": x["name"], "photos": len(x["files"])} for x in g],
+        "videos": list_track_videos(),
+    })
+
+
+@app.route("/api/track/register", methods=["POST"])
+def api_track_register():
+    d = request.get_json(force=True) or {}
+    folder = d.get("dir") or "D:/sports_checkin/registered"
+    try:
+        info = T.build_gallery(folder, get_track_model())
+        return jsonify({"ok": True, **info})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 400
+
+
+@app.route("/api/track/start", methods=["POST"])
+def api_track_start():
+    if T.get_state()["running"]:
+        return jsonify({"ok": False, "message": "已有分析任务在跑，等它结束"}), 409
+    d = request.get_json(force=True) or {}
+    name = Path(d.get("video", "")).name
+    video = next((v["path"] for v in list_track_videos() if v["name"] == name), None)
+    if not video:
+        return jsonify({"ok": False, "message": f"找不到视频 {name}"}), 404
+    job = "job_" + time.strftime("%H%M%S")
+    conf = float(d.get("conf", 0.35))
+    stride = max(1, int(d.get("stride", 8)))
+    seconds = max(2, min(60, int(d.get("seconds", 10))))
+    use_id = bool(d.get("use_id", False))
+
+    def worker():
+        try:
+            T.process_video(
+                video, job, get_track_model(),
+                T.load_gallery() if use_id else None,
+                stride=stride, conf=conf, max_width=1280,
+                max_seconds=seconds, id_threshold=0.75,
+            )
+        except Exception as e:
+            T.set_state(running=False, error=str(e))
+
+    # 先把状态置为「运行中」再起线程，否则页面第一次轮询会看到空闲、误判任务结束
+    T.set_state(running=True, done=0, total=0, message="正在加载模型……",
+                job=job, error="", result=None)
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify({"ok": True, "job": job})
+
+
+@app.route("/api/track/status")
+def api_track_status():
+    s = T.get_state()
+    s.pop("result", None)          # 结果单独取，别把整份塞进轮询
+    return jsonify(s)
+
+
+@app.route("/api/track/result")
+def api_track_result():
+    r = T.get_state().get("result")
+    if not r:
+        js = sorted(T.OUT_ROOT.glob("*/result.json"),
+                    key=lambda x: x.stat().st_mtime, reverse=True)
+        if js:
+            r = json.loads(js[0].read_text(encoding="utf-8"))
+    return jsonify({"ok": bool(r), "result": r})
+
+
+@app.route("/api/track/frame/<job>/<int:n>")
+def api_track_frame(job, n):
+    d = T.OUT_ROOT / job / "frames"
+    files = sorted(d.glob("*.jpg"))
+    if n < 0 or n >= len(files):
+        return "", 404
+    return send_file(str(files[n]), mimetype="image/jpeg")
+
+
+@app.route("/api/track/download/<job>")
+def api_track_download(job):
+    p = T.OUT_ROOT / job / "result.mp4"
+    if not p.exists():
+        return "", 404
+    return send_file(str(p), as_attachment=True,
+                     download_name=f"打卡追踪_{job}.mp4")
+
+
 def open_browser_later(port=5000):
     import webbrowser
     time.sleep(1.2)

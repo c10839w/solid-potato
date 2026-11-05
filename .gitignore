@@ -28,3 +28,12 @@ records/drafts/
 # 训练输出
 runs/
 dataset/
+
+# 人员打卡：逐帧 JPEG + 结果 mp4（164 MB，随时可重新生成）
+data/track/
+
+# 交付打包产物（体积大，单独发送给评委）
+dist/
+
+# 打卡流水（运行产物）
+records/checkin_log.jsonl
