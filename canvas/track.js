@@ -16,12 +16,15 @@ async function loadInfo() {
   const ck = r.videos.find(v => v.name.includes('_ck'));
   if (ck) sel.value = ck.name;
 
-  const modeTxt = r.mode === 'face'
-    ? '人脸级识别（YuNet + SFace 已加载）'
+  const face = r.mode === 'face';
+  const modeTxt = face
+    ? `人脸级识别（YuNet + SFace 已加载，阈值 ${r.threshold}）`
     : '外观特征（离线临时方案，身份结果不可靠）';
   $('modeNote').innerHTML = `<b>当前身份模式：${modeTxt}</b>　·　` +
-    `验证重点是「框住 + 同一个人不换号」；识别是谁这一步目前仅供参考。` +
-    `人员检测用 COCO 预训练的 yolo26n-seg，追踪用自写 IOU 追踪器，全程离线、无需联网。`;
+    `<i class="swatch" style="background:#d2453c"></i>红框只给注册库里的人，` +
+    `<i class="swatch" style="background:#3d7fbf"></i>蓝框是路人。` +
+    `人员检测用 COCO 预训练的 yolo26n-seg，追踪用自写 IOU 追踪器；` +
+    `重复框已在「检测 / 建轨 / 输出」三处去重。全程离线、无需联网。`;
 
   $('galCount').textContent = `（${r.gallery.length} 人）`;
   $('galList').innerHTML = r.gallery.length
@@ -90,27 +93,41 @@ async function loadResult() {
   S.frames = d.frames_saved || 0;
   S.idx = 0;
   $('verdict').textContent = d.verdict;
+  $('idHint').innerHTML = d.mode === 'face'
+    ? (d.registered_count > 0
+        ? `<b style="color:#c0392b">红框 ${d.registered_count} 人</b>：${(d.registered || []).join('、')}（人脸 cosine ≥ ${d.threshold}、领先次高 ≥ ${d.margin}）　·　<b style="color:#3d7fbf">蓝框 ${d.passerby_count} 个 ID</b> 为路人或没检到脸。同帧重叠框：${d.overlap_pairs ?? 0} 对。`
+        : `这段视频里没有人与注册库匹配上，<b>全部按路人画蓝框</b> —— 这是「宁可判路人也不误认」的正确结果，不是识别失败。想看红框效果请选 <b>demo_simple.mp4</b>（用注册照生成的演示视频）。同帧重叠框：${d.overlap_pairs ?? 0} 对。`)
+    : '当前是外观特征兜底模式，身份结论不可靠；把 yunet.onnx / sface.onnx 放进 models/ 即自动切换人脸模式。';
   $('kvFrames').textContent = d.frames_total;
   $('kvIds').textContent = d.track_count;
   $('kvLong').textContent = d.max_track_frames;
-  $('kvSwitch').textContent = d.id_switches ?? '—';
+  $('kvReg').textContent = d.registered_count ?? (d.registered ? d.registered.length : 0);
+  $('kvPass').textContent = d.passerby_count ?? '—';
 
   const range = $('frameRange');
   range.max = Math.max(0, S.frames - 1);
   range.value = 0;
-  showFrame(Math.floor(S.frames * 0.35));   // 停在中段，画面比首帧干净
+  // 停在「框最多、优先含注册人员」的那一帧，别落在空场/无人画面上
+  showFrame(Math.min(S.frames - 1,
+                     Math.max(0, d.best_frame ?? Math.floor(S.frames * 0.35))));
   // 下拉同步到这份结果对应的视频，避免「选的是 A、看到的是 B」
   if (d.video && [...$('videoSel').options].some(o => o.value === d.video)) {
     $('videoSel').value = d.video;
   }
 
   $('trackRows').innerHTML = d.tracks.length
-    ? d.tracks.map(t => `<tr>
-        <td><span class="pill">#${t.id}</span></td>
-        <td>${t.frames} 帧</td>
-        <td>${t.name ? `<span class="pill ok">${t.name}</span>` : '<span class="muted">未识别 / 未启用</span>'}</td>
-        <td>${t.sim ? t.sim.toFixed(3) : '—'}</td></tr>`).join('')
-    : '<tr><td colspan="4" class="muted">没有稳定目标</td></tr>';
+    ? d.tracks.map(t => {
+        const reg = !!t.name;
+        const kind = reg ? '<span class="pill red">注册人员</span>'
+                         : '<span class="pill blue">路人</span>';
+        return `<tr>
+          <td><span class="pill">#${t.id}</span></td>
+          <td>${t.frames} 帧</td>
+          <td>${kind}</td>
+          <td>${reg ? `<b style="color:#c0392b">${t.name}</b>` : '<span class="muted">—</span>'}</td>
+          <td>${t.sim ? t.sim.toFixed(3) : '—'}</td></tr>`;
+      }).join('')
+    : '<tr><td colspan="5" class="muted">没有稳定目标</td></tr>';
 
   $('checkinRows').innerHTML = d.checkins && d.checkins.length
     ? d.checkins.slice().reverse().map(c => `<tr>

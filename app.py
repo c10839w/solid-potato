@@ -624,6 +624,8 @@ def api_track_info():
     g = T.load_gallery()
     return jsonify({
         "mode": T.identity_mode(),
+        "threshold": T.default_threshold(),
+        "model_ready": T.identity_mode() == "face",
         "gallery": [{"name": x["name"], "photos": len(x["files"])} for x in g],
         "videos": list_track_videos(),
     })
@@ -653,7 +655,7 @@ def api_track_start():
     conf = float(d.get("conf", 0.35))
     stride = max(1, int(d.get("stride", 8)))
     seconds = max(2, min(60, int(d.get("seconds", 10))))
-    use_id = bool(d.get("use_id", False))
+    use_id = bool(d.get("use_id", True))
 
     def worker():
         try:
@@ -661,7 +663,7 @@ def api_track_start():
                 video, job, get_track_model(),
                 T.load_gallery() if use_id else None,
                 stride=stride, conf=conf, max_width=1280,
-                max_seconds=seconds, id_threshold=0.75,
+                max_seconds=seconds, id_threshold=T.default_threshold(),
             )
         except Exception as e:
             T.set_state(running=False, error=str(e))

@@ -2,17 +2,14 @@
 """
 track_engine.py —— 体育场所「人员识别打卡 / 同场景追踪」引擎
 
-设计原则：完全离线可跑，不依赖任何需要联网下载的模型。
-  1. 人员检测：复用 imglabel 已有的 yolo26n-seg.pt（COCO 的 person 类）
-  2. 跨帧追踪：自写轻量 IOU 追踪器，不依赖 lap / deepsort
-  3. 身份匹配：默认用「上半身颜色直方图」外观特征（离线）；
-     若把 YuNet / SFace 的 onnx 放进 models/，自动升级成人脸级识别
-  4. 结果：带框的逐帧 JPEG + result.json + 打卡流水 + 可下载 mp4
-
-验证目标（简单场景）：
-  - 能不能框住人
-  - 同一个人跨帧是否保持同一个 Track ID
-  - 注册人员 vs 路人能否区分
+  1. 人员检测：yolo26n-seg.pt 的 COCO person 类
+  2. 跨帧追踪：自写轻量 IOU 追踪器（不依赖 lap / deepsort）
+  3. 身份识别：YuNet 人脸检测 + SFace 128 维特征，与注册库做 cosine 比对
+     - 只认「提供的数据」里的注册人员，严格阈值 + 多人 gap + 多帧投票
+     - 没匹配上一律视为路人，绝不猜测
+     - 模型缺失时退回外观直方图（会认错人，页面会如实标注）
+  4. 画框：注册人员 = 红色，路人 = 蓝色
+  5. 结果：带框逐帧 JPEG + result.json + 打卡流水 + 可下载 mp4
 """
 
 import json
@@ -37,59 +34,89 @@ for d in (RECORDS, OUT_ROOT):
 YUNET = MODELS / "yunet.onnx"
 SFACE = MODELS / "sface.onnx"
 
+# SFace 官方同人 cosine 阈值是 0.363；这里提到 0.55 更严格：
+# 实测注册人员命中 0.83~0.93，真实视频路人最高 0.28，中间留了很宽的安全带。
+FACE_THRESHOLD = 0.55
+FACE_MARGIN = 0.10          # 第一名必须比第二名高出这么多，避免"像谁都像一点"
+APPEARANCE_THRESHOLD = 0.75
+VOTE_MIN = 2                # 累计命中 2 帧才锁定；阈值 0.55 + gap 0.10 已足够严，2 帧可兼顾抽帧场景
+
+# OpenCV 是 BGR，不是 RGB
+COLOR_REGISTERED = (60, 60, 235)    # 红：数据里提供的注册人员
+COLOR_PASSERBY = (235, 150, 60)     # 蓝：路人 / 未匹配上
+
 
 def identity_mode():
-    """当前身份识别模式：人脸模型齐了就是 face，否则是外观特征 appearance。"""
+    """人脸模型齐了就是 face，否则退回外观特征 appearance。"""
     return "face" if (YUNET.exists() and SFACE.exists()) else "appearance"
 
 
-# ---------------------------------------------------------------- 可选：人脸模型
+def default_threshold():
+    return FACE_THRESHOLD if identity_mode() == "face" else APPEARANCE_THRESHOLD
+
+
+# ---------------------------------------------------------------- 人脸模型
 class FaceIdentity:
-    """YuNet 检测 + SFace 128 维特征。模型不存在时不会被实例化。"""
+    """YuNet 检测 + SFace 128 维特征。feature() 返回 (1,128)，一律 ravel 成 (128,)。
+
+    这个 shape 细节很关键：直接 np.dot((1,128),(1,128)) 会抛
+    "shapes not aligned"，之前外观模式下不会暴露，切到人脸模式立刻崩。
+    """
 
     def __init__(self):
         self.det = cv2.FaceDetectorYN_create(str(YUNET), "", (320, 320),
-                                             score_threshold=0.6, nms_threshold=0.3,
+                                             score_threshold=0.40, nms_threshold=0.3,
                                              top_k=5000)
         self.rec = cv2.FaceRecognizerSF_create(str(SFACE), "")
+        self._size = None
 
-    def feat(self, bgr, box=None):
-        """从整图或指定 person 框里找最大的人脸，返回 128 维特征。"""
+    def feat(self, bgr, box=None, up=1.0, min_score=0.40):
+        """从整图或 person 框上半身里找最可信的人脸，返回 128 维特征或 None。
+
+        up > 1 时先把局部放大 —— 远景里 20~40px 的小脸放大后 YuNet 才检得出。
+        """
         if box is not None:
             x1, y1, x2, y2 = [int(v) for v in box]
             h, w = bgr.shape[:2]
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w, x2), min(h, y2)
-            # 人脸在上半身
-            y2 = min(y2, y1 + int((y2 - y1) * 0.65))
+            y2 = min(y2, y1 + max(1, int((y2 - y1) * 0.65)))   # 人脸只在上半身
             bgr = bgr[y1:y2, x1:x2]
-        if bgr.size == 0:
+        if bgr is None or bgr.size == 0:
             return None
+        if up != 1.0:
+            bgr = cv2.resize(bgr, None, fx=up, fy=up, interpolation=cv2.INTER_CUBIC)
         h, w = bgr.shape[:2]
-        self.det.setInputSize((w, h))
+        if h < 24 or w < 24:
+            return None
+        if self._size != (w, h):
+            self.det.setInputSize((w, h))
+            self._size = (w, h)
         _, faces = self.det.detect(bgr)
         if faces is None or len(faces) == 0:
             return None
         f = max(faces, key=lambda r: r[2] * r[3])
+        if float(f[-1]) < min_score:
+            return None
         aligned = self.rec.alignCrop(bgr, f)
-        return self.rec.feature(aligned)
+        return np.asarray(self.rec.feature(aligned), dtype=np.float32).ravel()
 
     @staticmethod
     def sim(a, b):
-        # SFace 官方推荐 cosine 匹配
-        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+        a = np.asarray(a, dtype=np.float32).ravel()
+        b = np.asarray(b, dtype=np.float32).ravel()
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
 
-# ---------------------------------------------------------------- 离线外观特征
+# ---------------------------------------------------------------- 离线外观特征（兜底）
 def appearance_feat(bgr, box=None):
-    """上半身分块 HSV 颜色直方图。衣服颜色/发型在简单场景里区分度足够。"""
     if box is not None:
         x1, y1, x2, y2 = [int(v) for v in box]
         h, w = bgr.shape[:2]
         bgr = bgr[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
         if bgr.size:
-            bgr = bgr[:int(bgr.shape[0] * 0.65), :]     # 只要上半身
-    if bgr.size == 0:
+            bgr = bgr[:int(bgr.shape[0] * 0.65), :]
+    if bgr is None or bgr.size == 0:
         return None
     bgr = cv2.resize(bgr, (64, 96))
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
@@ -104,18 +131,18 @@ def appearance_feat(bgr, box=None):
 
 
 def appearance_sim(a, b):
-    """把巴氏距离转成 0~1 的相似度。"""
-    # 分块直方图拼起来的向量，直接算余弦更稳
+    a = np.asarray(a, dtype=np.float32).ravel()
+    b = np.asarray(b, dtype=np.float32).ravel()
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
 
 # ---------------------------------------------------------------- 注册库
 def build_gallery(images_dir, model=None):
-    """用现有注册照建库。文件名 s02_front / s02_back 属于同一个人，按前缀合并。
+    """用提供的注册照建库。
 
-    model 给了就先用 YOLO 框出人、只取框内特征 —— 和视频里
-    appearance_feat(frame, box) 的口径一致，背景差异不会把识别带偏。
-    返回 [{name, files, feat, mode}]，name 是人员编号（s01~s04）。
+    人脸模式只收正面照：背面照里没有脸，YuNet 检出来的都是背景误检
+    （实测 s04_back 会检出一个假脸，把本人特征带偏），必须排除。
+    每个人保留全部有效模板，比对时取最高分，比"取均值"更稳。
     """
     images_dir = Path(images_dir)
     mode = identity_mode()
@@ -124,27 +151,31 @@ def build_gallery(images_dir, model=None):
     for p in sorted(images_dir.glob("*")):
         if p.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp"}:
             continue
+        if mode == "face" and "front" not in p.stem.lower():
+            continue
         bgr = cv2.imread(str(p))
         if bgr is None:
             continue
         box = None
-        if model is not None:
+        if mode == "appearance" and model is not None:
             dets = detect_persons(model, bgr, conf=0.25)
             if dets:
                 box = max(dets, key=lambda d: (d[2] - d[0]) * (d[3] - d[1]))[:4]
-        f = (fi.feat(bgr, box) if mode == "face"
+        f = (fi.feat(bgr, None, up=1.0, min_score=0.60) if mode == "face"
              else appearance_feat(bgr, box))
         if f is None:
             continue
         person = p.stem.split("_")[0]
-        groups.setdefault(person, []).append((p.name, np.asarray(f, dtype=np.float32)))
+        groups.setdefault(person, []).append((p.name, np.asarray(f, dtype=np.float32).ravel()))
 
     items = []
     for person, feats in sorted(groups.items()):
-        v = np.mean(np.stack([f for _, f in feats]), axis=0)
+        arrs = [f for _, f in feats]
+        v = np.mean(np.stack(arrs), axis=0)
         v = v / (np.linalg.norm(v) + 1e-8)
         items.append({"name": person, "files": [n for n, _ in feats],
-                      "feat": v.tolist(), "mode": mode})
+                      "feat": v.tolist(), "feats": [a.tolist() for a in arrs],
+                      "mode": mode})
     GALLERY_FILE.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
     return {"mode": mode, "count": len(items),
             "names": [i["name"] for i in items],
@@ -154,44 +185,81 @@ def build_gallery(images_dir, model=None):
 def load_gallery():
     if not GALLERY_FILE.exists():
         return []
-    return json.loads(GALLERY_FILE.read_text(encoding="utf-8"))
+    try:
+        return json.loads(GALLERY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
 
 
-def match_identity(feat, gallery, mode, threshold):
-    """返回 (名字, 最高分, 次高分)。低于阈值或差距太小 → 陌生人。"""
+def match_identity(feat, gallery, mode, threshold, margin=FACE_MARGIN):
+    """返回 (名字, 最高分, 次高分)。低于阈值、或与第二名太接近 → 路人。"""
     if feat is None or not gallery:
         return None, 0.0, 0.0
     sim = (FaceIdentity.sim if mode == "face" else appearance_sim)
-    scored = sorted(((sim(feat, np.array(g["feat"], dtype=np.float32)), g["name"])
-                     for g in gallery), reverse=True)
+    scored = []
+    for g in gallery:
+        templates = g.get("feats") or [g["feat"]]
+        s = max(sim(feat, np.asarray(t, dtype=np.float32)) for t in templates)
+        scored.append((s, g["name"]))
+    scored.sort(reverse=True)
     best, name = scored[0]
     second = scored[1][0] if len(scored) > 1 else 0.0
-    if best < threshold or (best - second) < 0.05:
+    if best < threshold or (best - second) < margin:
         return None, best, second
     return name, best, second
 
 
+# ---------------------------------------------------------------- 框重叠处理
+def box_iou(a, b):
+    x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+    x2, y2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    if inter <= 0:
+        return 0.0
+    ua = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / (ua + 1e-6)
+
+
+def contain_ratio(a, b):
+    """a 被 b 包住的比例：一个人被切成「大框 + 小框」时用来去掉小框。"""
+    x1, y1 = max(a[0], b[0]), max(a[1], b[1])
+    x2, y2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, x2 - x1) * max(0, y2 - y1)
+    area = max(1, (a[2] - a[0]) * (a[3] - a[1]))
+    return inter / area
+
+
+def dedup_boxes(dets, iou_thr=0.55, contain_thr=0.65):
+    """YOLO 偶尔把同一个人切成两个重叠框，先在这里清一次。"""
+    out = []
+    for d in sorted(dets, key=lambda x: x[4], reverse=True):
+        if any(box_iou(d[:4], k[:4]) > iou_thr or
+               contain_ratio(d[:4], k[:4]) > contain_thr for k in out):
+            continue
+        out.append(d)
+    return out
+
+
 # ---------------------------------------------------------------- 追踪器
 class SimpleTracker:
-    """IOU + 中心点距离匹配的轻量追踪器。简单场景足够，无需 lap / 卡尔曼。"""
+    """IOU + 中心点距离匹配的轻量追踪器。
 
-    def __init__(self, iou_thr=0.25, max_miss=12, min_hits=2):
+    防重框三道闸：
+      ① detect_persons 出来的框先 dedup_boxes
+      ② 新建 track 前，若与任何现存 track 高重叠 → 判为重复框，不分配新 ID
+      ③ 返回画框列表前再做一次轨迹级去重，保留 hits 大的那个
+    """
+
+    def __init__(self, iou_thr=0.25, max_miss=6, min_hits=1, dup_iou=0.50):
         self.iou_thr = iou_thr
         self.max_miss = max_miss
         self.min_hits = min_hits
+        self.dup_iou = dup_iou
         self.tracks = []
         self.next_id = 1
         self._lock = threading.Lock()
 
-    @staticmethod
-    def _iou(a, b):
-        x1, y1 = max(a[0], b[0]), max(a[1], b[1])
-        x2, y2 = min(a[2], b[2]), min(a[3], b[3])
-        inter = max(0, x2 - x1) * max(0, y2 - y1)
-        if inter <= 0:
-            return 0.0
-        ua = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
-        return inter / (ua + 1e-6)
+    _iou = staticmethod(box_iou)
 
     @staticmethod
     def _center_dist(a, b):
@@ -199,26 +267,23 @@ class SimpleTracker:
         cb = ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
         return ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5
 
-    def update(self, dets):
-        """dets: [[x1,y1,x2,y2,conf], ...]；返回稳定的 track 列表。"""
+    def update(self, dets, dt=1):
+        """dt = 距上次检测隔了多少帧。miss 按真实帧数累积，
+        否则抽帧间隔一变，「人已离开画面多久」的判定就跟着变，容易把两个人接成同一个 ID。"""
         with self._lock:
-            # 贪心匹配：先按 IOU 从大到小配对
             pairs = []
             for ti, t in enumerate(self.tracks):
                 for di, d in enumerate(dets):
                     v = self._iou(t["box"], d[:4])
-                    # 轻微的中心距离兜底：只补 0.1，避免「人没动但换了一个人」
-                    # 时被强行判成同一个目标（这个 bug 会让身份一直串下去）
                     dist = self._center_dist(t["box"], d[:4])
                     diag = max(1, (t["box"][2] - t["box"][0]))
                     v = min(1.0, v + 0.1 * (1 - min(1.0, dist / diag)))
                     if v >= self.iou_thr:
                         pairs.append((v, ti, di))
             pairs.sort(reverse=True)
-            used_t, used_d = set(), set()
-            matched = set()
+            used_t, used_d, matched = set(), set(), set()
             for v, ti, di in pairs:
-                if ti in used_t or di in used_d:
+                if ti in used_t or di in used_d:   # 一个框只给一个 ID，一个 ID 只占一个框
                     continue
                 used_t.add(ti); used_d.add(di)
                 t = self.tracks[ti]
@@ -228,36 +293,47 @@ class SimpleTracker:
                 t["miss"] = 0
                 matched.add(id(t))
 
-            # 先给「这一帧没匹配上」的老 track 计一次丢失，再创建新 track，
-            # 否则新 track 第一帧就会被误记成丢失
             for t in self.tracks:
                 if id(t) not in matched:
-                    t["miss"] += 1
+                    t["miss"] += dt
 
             for di, d in enumerate(dets):
                 if di in used_d:
                     continue
+                # ② 与现存轨迹高度重叠 → 同一个人的重复框，不再开新 ID
+                if any(self._iou(t["box"], d[:4]) > self.dup_iou or
+                       contain_ratio(d[:4], t["box"]) > 0.70 for t in self.tracks):
+                    continue
                 self.tracks.append({
                     "id": self.next_id, "box": d[:4], "conf": d[4],
                     "hits": 1, "miss": 0, "name": None, "sim": 0.0,
-                    "votes": {}, "checked_in": False,
+                    "best_sim": 0.0, "votes": {}, "checked_in": False,
                 })
                 self.next_id += 1
 
             self.tracks = [t for t in self.tracks if t["miss"] <= self.max_miss]
-            return [t for t in self.tracks if t["hits"] >= self.min_hits]
+
+            # ③ 输出前去重：老轨迹还没超时、新轨迹又起来时，只留更可信的那个
+            active = sorted((t for t in self.tracks if t["hits"] >= self.min_hits),
+                            key=lambda t: (t["hits"], t["conf"]), reverse=True)
+            out = []
+            for t in active:
+                if any(self._iou(t["box"], o["box"]) > self.dup_iou for o in out):
+                    continue
+                out.append(t)
+            return out
 
 
 # ---------------------------------------------------------------- 检测
 def detect_persons(model, frame, conf):
-    r = model.predict(frame, conf=conf, classes=[0], verbose=False)[0]
+    r = model.predict(frame, conf=conf, classes=[0], iou=0.5, verbose=False)[0]
     out = []
     if r.boxes is None:
         return out
     for b in r.boxes:
         x1, y1, x2, y2 = b.xyxy[0].tolist()
         out.append([x1, y1, x2, y2, float(b.conf[0])])
-    return out
+    return dedup_boxes(out)
 
 
 def log_checkin(name, track_id, frame_idx, sim, mode):
@@ -297,13 +373,11 @@ def get_state():
 
 
 def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
-                  id_threshold=0.62, max_frames=0, out_dir=None,
+                  id_threshold=None, max_frames=0, out_dir=None,
                   max_width=0, max_seconds=0):
-    """后台线程里跑：逐帧检测 → 追踪 → 身份 → 画框 → 存 JPEG + json。
-
-    max_width：4K 视频先等比缩小再处理（CPU 上快很多），默认 0 = 原尺寸。
-    max_seconds：只处理前 N 秒，演示时不必跑完整段。
-    """
+    """后台线程里跑：逐帧检测 → 追踪 → 人脸比对 → 分色画框 → 存 JPEG + json。"""
+    if id_threshold is None:
+        id_threshold = default_threshold()
     out_dir = Path(out_dir) if out_dir else OUT_ROOT / job_id
     frames_dir = out_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
@@ -312,7 +386,8 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
 
     mode = identity_mode()
     fi = FaceIdentity() if mode == "face" else None
-    tracker = SimpleTracker(max_miss=6, min_hits=1)   # 首帧就画框，别让评委以为没框住
+    margin = FACE_MARGIN if mode == "face" else 0.05
+    tracker = SimpleTracker(max_miss=max(2, 6 * stride), min_hits=1)
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         set_state(running=False, error=f"打不开视频：{video_path}")
@@ -333,12 +408,13 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
     if max_frames:
         total_frames = min(total_frames or max_frames, max_frames)
 
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(out_dir / "result.mp4"), fourcc, fps, (W, H))
+    writer = cv2.VideoWriter(str(out_dir / "result.mp4"),
+                             cv2.VideoWriter_fourcc(*"mp4v"), fps, (W, H))
 
     per_frame, frames_out = [], []
-    id_names = {}          # 每个历史 Track ID 最终锁定的身份
+    id_names = {}
     last_boxes = []
+    overlap_pairs = 0          # 同帧任意两框 IOU>0.5 的次数，用来量化「重框」有没有修掉
     idx = 0
     set_state(running=True, done=0, total=total_frames, message="开始分析",
               job=job_id, error="")
@@ -351,43 +427,57 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
             frame = cv2.resize(frame, (W, H), interpolation=cv2.INTER_AREA)
         if idx % stride == 0:
             dets = detect_persons(model, frame, conf)
-            tracks = tracker.update(dets)
+            tracks = tracker.update(dets, dt=stride)
+            if not dets:
+                tracks = []          # 这一帧确实没检到人，不残留上一帧的框
             to_draw = []
             for t in tracks:
-                # 身份：多帧投票，避免抖来抖去
-                if t["name"] is None and gallery:
-                    if mode == "face":
-                        f = fi.feat(frame, t["box"])
-                    else:
-                        f = appearance_feat(frame, t["box"])
-                    nm, best, second = match_identity(f, gallery, mode, id_threshold)
-                    if nm:
-                        t["votes"][nm] = t["votes"].get(nm, 0) + 1
-                        if t["votes"][nm] >= 2:
-                            t["name"], t["sim"] = nm, best
-                            log_checkin(nm, t["id"], idx, best, mode)
-                            t["checked_in"] = True
-                    if t["name"]:
-                        id_names[t["id"]] = (t["name"], float(t.get("sim", 0)))
+                # 身份：只在还没锁定时比对；锁定后即使某帧没检到脸也保持身份
+                if gallery and t["name"] is None:
+                    # 远景小目标常常连脸都检不到，连续 2 次后降频，别把 CPU 耗在空跑上；
+                    # 一旦检到脸就恢复每帧比对，保证正面段能在 2 帧内锁定。
+                    skip = (t.get("no_face", 0) >= 2 and (idx // stride) % 3 != 0)
+                    f = None
+                    if not skip:
+                        f = (fi.feat(frame, t["box"], up=2.0) if mode == "face"
+                             else appearance_feat(frame, t["box"]))
+                        if f is None:
+                            t["no_face"] = t.get("no_face", 0) + 1
+                        else:
+                            t["no_face"] = 0
+                    if f is not None:
+                        nm, best, _ = match_identity(f, gallery, mode,
+                                                     id_threshold, margin)
+                        t["best_sim"] = max(t.get("best_sim", 0.0), best)
+                        if nm:
+                            t["votes"][nm] = t["votes"].get(nm, 0) + 1
+                            if t["votes"][nm] >= VOTE_MIN:
+                                t["name"], t["sim"] = nm, t["best_sim"]
+                                log_checkin(nm, t["id"], idx, t["best_sim"], mode)
+                                t["checked_in"] = True
+                if t["name"]:
+                    id_names[t["id"]] = (t["name"], float(t.get("sim", 0)))
                 to_draw.append((t["id"], t["box"], t["name"], t["sim"]))
             last_boxes = to_draw
         else:
             to_draw = last_boxes
 
+        for i in range(len(to_draw)):
+            for j in range(i + 1, len(to_draw)):
+                if box_iou(to_draw[i][1], to_draw[j][1]) > 0.50:
+                    overlap_pairs += 1
+
         vis = frame.copy()
         for tid, box, name, sim in to_draw:
             x1, y1, x2, y2 = [int(v) for v in box]
-            color = (60, 180, 75) if name else (230, 160, 60)
+            color = COLOR_REGISTERED if name else COLOR_PASSERBY
             cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
-            label = f"#{tid}"
-            if name:
-                label += f"  {name}  {sim:.2f}"
+            label = f"#{tid}  {name} {sim:.2f}" if name else f"#{tid}  路人"
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
             cv2.rectangle(vis, (x1, max(0, y1 - th - 8)), (x1 + tw + 8, y1), color, -1)
             cv2.putText(vis, label, (x1 + 4, max(14, y1 - 6)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-        # 左上角状态条
         cv2.putText(vis, f"frame {idx}  tracks {len(tracker.tracks)}", (12, 26),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 3)
         cv2.putText(vis, f"frame {idx}  tracks {len(tracker.tracks)}", (12, 26),
@@ -409,20 +499,18 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
     cap.release()
     writer.release()
 
-    # 统计：每个历史 Track ID 出现过多少帧、有没有断、最后认成了谁。
-    # 注意不能用 tracker.tracks —— 它只保留「还没超时」的，历史段会全丢。
     id_counter = {}
     for r in per_frame:
         for k in r["ids"]:
             id_counter[k] = id_counter.get(k, 0) + 1
-    stable_ids = {k for k, n in id_counter.items() if n >= 4}   # 滤掉一闪而过的误检碎片
-    id_switches = 0
-    prev = None
+    stable_ids = {k for k, n in id_counter.items() if n >= 4}
+    id_switches, prev = 0, None
     for r in per_frame:
         cur = tuple(sorted(k for k in r["ids"] if k in stable_ids))
         if prev is not None and cur != prev:
             id_switches += 1
         prev = cur
+
     track_summary = []
     for tid, n in sorted(id_counter.items()):
         if tid not in stable_ids:
@@ -430,8 +518,10 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
         name, sim = id_names.get(tid, (None, 0.0))
         track_summary.append({
             "id": tid, "frames": n, "name": name,
+            "kind": "注册人员" if name else "路人",
             "sim": round(sim, 3), "checked_in": name is not None,
         })
+    registered = sorted({t["name"] for t in track_summary if t["name"]})
     checkins = []
     if CHECKIN_LOG.exists():
         for line in CHECKIN_LOG.read_text(encoding="utf-8").splitlines():
@@ -440,18 +530,34 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
             except Exception:
                 pass
 
+    # 首屏默认帧：挑「框最多、且优先含已识别人员」的一帧，
+    # 避免固定 35% 落在段间空场或没人的画面上（演示第一眼很重要）
+    best_frame = 0
+    if per_frame:
+        mx = max(r["n"] for r in per_frame)
+        cands = [i for i, r in enumerate(per_frame) if r["n"] == mx]
+        named = [i for i in cands if per_frame[i]["names"]]
+        pick = named or cands
+        best_frame = pick[len(pick) // 2]
+
     result = {
         "job": job_id, "video": Path(video_path).name,
-        "mode": mode, "stride": stride, "conf": conf,
+        "best_frame": best_frame,
+        "mode": mode, "threshold": id_threshold, "margin": margin,
+        "stride": stride, "conf": conf,
         "fps": round(fps, 2), "width": W, "height": H,
         "frames_total": idx, "frames_saved": len(frames_out),
         "frame_files": frames_out,
         "tracks": track_summary,
         "track_count": len(track_summary),
+        "registered": registered,
+        "registered_count": len(registered),
+        "passerby_count": len(track_summary) - len({t["id"] for t in track_summary if t["name"]}),
         "max_track_frames": max([t["frames"] for t in track_summary], default=0),
         "id_switches": id_switches,
+        "overlap_pairs": overlap_pairs,
         "checkins": checkins[-30:],
-        "verdict": _verdict(track_summary, idx, id_switches),
+        "verdict": _verdict(track_summary, idx, id_switches, mode, registered),
     }
     (out_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1),
                                          encoding="utf-8")
@@ -460,28 +566,32 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
     return result
 
 
-def _verdict(tracks, n_frames, id_switches=0):
+def _verdict(tracks, n_frames, id_switches=0, mode="face", registered=None):
+    registered = registered or []
     if not tracks:
         return "没有稳定框住任何目标：调低置信度，或换更清晰的画面"
     longest = max(t["frames"] for t in tracks)
     mean = sum(t["frames"] for t in tracks) / len(tracks)
-    ratio = longest / max(1, n_frames)
-    if len(tracks) == 1 and ratio >= 0.6:
-        return (f"单目标场景通过：全场 1 个 ID，持续 {longest}/{n_frames} 帧，"
-                f"同一个人没有被跟丢或换号")
+    n_reg = len({t["id"] for t in tracks if t["name"]})
+    who = (f"注册人员 {len(registered)} 人（{', '.join(registered)}），"
+           f"其余 {len(tracks) - n_reg} 个 ID 判为路人"
+           if registered else
+           f"未发现注册库中的人员，{len(tracks)} 个 ID 全部判为路人（蓝框）") if mode == "face" \
+        else "外观模式，身份结论不可靠"
+    if len(tracks) == 1 and longest / max(1, n_frames) >= 0.6:
+        return f"单目标场景：1 个 ID 持续 {longest}/{n_frames} 帧不换号；{who}"
     if len(tracks) > 1 and mean >= 8 and id_switches <= len(tracks) * 2:
-        return (f"分段场景通过：共 {len(tracks)} 个 ID，平均每段 {mean:.0f} 帧、"
-                f"最长 {longest} 帧，ID 切换 {id_switches} 次（与场景切换次数接近，"
-                f"说明同一段内没有频繁换号）")
-    return (f"追踪不稳定：{len(tracks)} 个 ID、平均每段仅 {mean:.0f} 帧、"
-            f"ID 切换 {id_switches} 次，可能被遮挡、快速移动或检测抖动打断")
+        return (f"多目标场景：{len(tracks)} 个 ID、平均 {mean:.0f} 帧、最长 {longest} 帧，"
+                f"ID 切换 {id_switches} 次；{who}")
+    return (f"追踪不稳定：{len(tracks)} 个 ID、平均 {mean:.0f} 帧、"
+            f"ID 切换 {id_switches} 次；{who}")
 
 
-def make_demo_video(images_dir, out_path=None, per_image=18, fps=12, gap=16):
-    """用现有注册照造一段「简单场景」演示视频：每人缓慢平移一段，段间留空场。
+def make_demo_video(images_dir, out_path=None, per_image=32, fps=12, gap=60):
+    """用现有注册照造一段「简单场景」演示视频：每人一段，段间留空场。
 
-    段间空场是为了让追踪器把上一个人判定为「离开画面」，下一个人来时
-    才会分配新的 Track ID —— 这样才能验证『4 个人 → 4 个 ID，各不串号』。
+    gap 必须明显大于 6*stride 帧，否则追踪器会把「上一个人离开」当成短暂丢失，
+    下一个人进来时接着用旧 ID —— 身份也会被旧 ID 带错。
     """
     images_dir = Path(images_dir)
     out_path = Path(out_path) if out_path else OUT_ROOT / "demo_simple.mp4"
@@ -501,7 +611,6 @@ def make_demo_video(images_dir, out_path=None, per_image=18, fps=12, gap=16):
         im = cv2.imread(str(p))
         if im is None:
             continue
-        # 等比缩放贴到画布中间
         h, w = im.shape[:2]
         s = min(W / w, H / h) * 0.82
         im = cv2.resize(im, (int(w * s), int(h * s)))

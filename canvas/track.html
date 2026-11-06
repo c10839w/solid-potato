@@ -37,9 +37,11 @@ select, input[type=number] {
   border-radius: var(--r-m); padding: 14px 16px; font-size: 14px; line-height: 1.7;
   margin-bottom: 14px; color: #2f6145;
 }
-.kvs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.kvs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
 .kv { background: #fff; border: 2px dashed var(--line); border-radius: var(--r-m); padding: 10px 6px; text-align: center; }
 .kv b { display: block; font-family: var(--font-num); font-size: 23px; color: #c9788f; }
+.kv b.red { color: #d2453c; }
+.kv b.blue { color: #3d7fbf; }
 .kv span { font-size: 11.5px; color: var(--ink-3); }
 .player { background: #2b2b2b; border-radius: 10px; overflow: hidden; }
 .player img { width: 100%; display: block; min-height: 220px; max-height: 470px; object-fit: contain; }
@@ -51,6 +53,9 @@ th, td { padding: 8px 10px; text-align: left; border-bottom: 1px dashed var(--li
 th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
 .pill { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: 11.5px; background: var(--blue-l, #e3f0fb); color: #4a7ba3; }
 .pill.ok { background: var(--mint-l, #e6f5ec); color: #3e7d5c; }
+.pill.red { background: #fdeaea; color: #c0392b; }
+.pill.blue { background: #e6f0fa; color: #3d7fbf; }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
 .foot { margin-top: 18px; font-size: 12.5px; color: var(--ink-3); line-height: 1.8; }
 .foot b { color: var(--ink-2); }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .kvs { grid-template-columns: repeat(2,1fr); } }
@@ -73,9 +78,9 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
   <div class="head">
     <span class="tag blue">新项目 · 可行性验证</span>
     <h1>体育场所人员识别打卡</h1>
-    <p>先做最简单的一件事：给一段同场景视频，看系统<strong>能不能把人框住</strong>，
-       以及<strong>同一个人走过画面时，框上的编号会不会一直不变</strong>。
-       这一步过了，才谈得上「认出是谁、自动打卡」。</p>
+    <p>给一段同场景视频，系统先把人框住、跨帧保持同一个编号；
+       再用注册照做人脸比对，<strong>只把数据里提供的登记人员标红，其余一律算路人标蓝</strong>。
+       匹配不上绝不猜，宁可判路人。</p>
   </div>
 
   <div class="notice" id="modeNote">正在读取识别模式……</div>
@@ -107,8 +112,8 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
         <input type="number" id="inpConf" value="0.35" min="0.1" max="0.9" step="0.05">
       </div>
       <label class="chk" style="margin-bottom:6px">
-        <input type="checkbox" id="chkId">
-        <span>顺便比对注册人员（实验性：目前用外观特征，识别结果不可靠，建议先不勾）</span>
+        <input type="checkbox" id="chkId" checked>
+        <span>启用人脸比对（YuNet + SFace，严格阈值；不勾则全部按路人画蓝框）</span>
       </label>
 
       <button class="btn primary big btn-main" id="btnStart">开始分析</button>
@@ -120,11 +125,13 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
       <span class="tape">第二步</span>
       <h2>看结果</h2>
       <div class="verdict" id="verdict">还没有结果。左边点「开始分析」，等它跑完。</div>
+      <div class="foot" id="idHint" style="margin:-8px 0 14px"></div>
       <div class="kvs">
         <div class="kv"><b id="kvFrames">—</b><span>处理帧数</span></div>
         <div class="kv"><b id="kvIds">—</b><span>Track ID 数</span></div>
         <div class="kv"><b id="kvLong">—</b><span>最长持续（帧）</span></div>
-        <div class="kv"><b id="kvSwitch">—</b><span>ID 切换次数</span></div>
+        <div class="kv"><b id="kvReg" class="red">—</b><span>注册人员（红框）</span></div>
+        <div class="kv"><b id="kvPass" class="blue">—</b><span>路人（蓝框）</span></div>
       </div>
       <div class="player">
         <img id="frameImg" alt="分析结果帧" src="">
@@ -136,7 +143,10 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
       </div>
       <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
         <a class="btn blue" id="btnDownload" href="#" style="display:none">下载结果视频</a>
-        <span class="foot" id="playerHint" style="margin:0;align-self:center">蓝框 = 未识别 / 未启用身份，绿框 = 已识别人员；框上的 #数字 是追踪编号，同一人应保持同一个编号</span>
+        <span class="foot" id="playerHint" style="margin:0;align-self:center">
+          <i class="swatch" style="background:#d2453c"></i>红框 = 注册人员　
+          <i class="swatch" style="background:#3d7fbf"></i>蓝框 = 路人　·　框上 #数字 是追踪编号，同一人应保持同一个编号
+        </span>
       </div>
     </div>
   </div>
@@ -145,8 +155,8 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
     <span class="tape butter">明细</span>
     <h2>每个编号追踪了多久</h2>
     <table>
-      <thead><tr><th>Track ID</th><th>持续帧数</th><th>识别为</th><th>相似度</th></tr></thead>
-      <tbody id="trackRows"><tr><td colspan="4" class="muted">暂无数据</td></tr></tbody>
+      <thead><tr><th>Track ID</th><th>持续帧数</th><th>类别</th><th>识别为</th><th>相似度</th></tr></thead>
+      <tbody id="trackRows"><tr><td colspan="5" class="muted">暂无数据</td></tr></tbody>
     </table>
     <h2 style="margin-top:22px">打卡记录</h2>
     <table>
@@ -161,10 +171,10 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
     <div id="galList" class="foot">读取中……</div>
     <div style="margin-top:12px"><button class="btn ghost" id="btnRebuild">用现有注册照重建注册库</button></div>
     <p class="foot">
-      <b>诚实说明：</b>目前引擎用「上半身颜色直方图」做身份比对，这是完全离线的临时方案，
-      实测在 4 人小样本上会把人和人认错，<b>不能当成正式的人脸打卡</b>。
-      把 YuNet / SFace 的 onnx 模型放进 <code>models/</code> 目录后，引擎会自动切换成人脸级识别，
-      无需改代码。当前页面的核心结论只看「框住」和「同一个人不换号」，这两项是真实可用的。
+      <b>识别口径：</b>注册库只用 4 张<b>正面照</b>建人脸模板 —— 背面照没有脸，检测器会把背景误检成脸，
+      实测会污染特征，所以排除。视频里对每个追踪框的上半身做 YuNet 人脸检测 + SFace 128 维特征，
+      cosine 相似度 ≥ 0.55、且比第二名高出 0.10 以上、并累计命中 3 帧，才判为登记人员（红框）；
+      其余一律是路人（蓝框）。<b>检不到脸 / 分数不够 = 路人，绝不硬认。</b>
     </p>
   </div>
 </div>
