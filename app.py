@@ -619,14 +619,29 @@ def api_track_upload():
                     "message": f"已上传 {dst.name}"})
 
 
+def _gallery_view():
+    """注册库展示数据：photos = 真正进人脸模板的张数，saved = 磁盘上该人照片总数。
+
+    之前只显示 photos，用户传了 3 张（正/背/侧）却只看到 1 张，会误以为是延迟。
+    """
+    g = T.load_gallery()
+    view = [{"name": x["name"], "photos": len(x["files"]),
+             "saved": len(x.get("all_files") or x["files"])} for x in g]
+    folder = track_register_dir()
+    disk = sum(1 for p in folder.glob("*") if p.suffix.lower() in REGISTER_IMG_EXTS)
+    return view, disk
+
+
 @app.route("/api/track/info")
 def api_track_info():
-    g = T.load_gallery()
+    view, disk = _gallery_view()
     return jsonify({
         "mode": T.identity_mode(),
         "threshold": T.default_threshold(),
         "model_ready": T.identity_mode() == "face",
-        "gallery": [{"name": x["name"], "photos": len(x["files"])} for x in g],
+        "gallery": view,
+        "disk_photos": disk,
+        "templates": sum(x["photos"] for x in view),
         "videos": list_track_videos(),
     })
 
@@ -743,8 +758,12 @@ def api_track_register_upload():
         return jsonify({"ok": False, "message": "没有有效照片；" + "、".join(skipped)}), 400
 
     info = T.build_gallery(str(folder), get_track_model())
-    msg = (f"已保存 {len(saved)} 张（{person}），注册库现有 {info['count']} 人 / "
-           f"{info['photos']} 张正面照；重新点「开始分析」即可看到新人员的红框")
+    view, disk = _gallery_view()
+    rej = info.get("rejected", [])
+    msg = (f"已保存 {len(saved)} 张（{person}）。注册库现有 {info['count']} 人、"
+           f"{info['photos']} 张有效模板（磁盘共 {disk} 张照片）")
+    if rej:
+        msg += f"；{len(rej)} 张未进模板，原因见下方"
     if person not in info["names"]:
         msg += "。注意：这个人还没进人脸模板，请补一张清晰的正面照"
     if skipped:
@@ -752,7 +771,8 @@ def api_track_register_upload():
     if T.get_state()["running"]:
         msg += "。当前有分析在跑，新注册库从下一次分析开始生效"
     return jsonify({"ok": True, "message": msg, "person": person,
-                    "saved": saved, "skipped": skipped, **info})
+                    "saved": saved, "skipped": skipped,
+                    "gallery": view, "disk_photos": disk, **info})
 
 
 @app.route("/api/track/register", methods=["POST"])
@@ -761,7 +781,9 @@ def api_track_register():
     folder = track_register_dir(d.get("dir"))
     try:
         info = T.build_gallery(str(folder), get_track_model())
-        return jsonify({"ok": True, **info})
+        view, disk = _gallery_view()
+        return jsonify({"ok": True, "gallery": view,
+                        "disk_photos": disk, **info})
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)}), 400
 

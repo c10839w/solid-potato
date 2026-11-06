@@ -58,9 +58,14 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
 .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
 .foot { margin-top: 18px; font-size: 12.5px; color: var(--ink-3); line-height: 1.8; }
 .foot b { color: var(--ink-2); }
-.reg-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.reg-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; }
+.reg-person { width: 168px; padding: 8px 10px; border: 1.5px dashed var(--ink-3, #c8bfb4);
+  border-radius: 8px; font-size: 12.5px; color: var(--ink-2); background: #fffdf9; }
+.reg-person::placeholder { color: #b9b0a5; }
 /* 按钮下方的一行说明：比按钮文字淡一档，不抢主操作 */
 .up-hint { margin: 7px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.65; }
+.up-hint b { color: var(--ink-2); font-weight: 600; }
+#regMsg { white-space: pre-line; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .kvs { grid-template-columns: repeat(2,1fr); } }
 </style>
 </head>
@@ -148,7 +153,7 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
         <a class="btn blue" id="btnDownload" href="#" style="display:none">下载结果视频</a>
         <span class="foot" id="playerHint" style="margin:0;align-self:center">
           <i class="swatch" style="background:#d2453c"></i>红框 = 注册人员　
-          <i class="swatch" style="background:#3d7fbf"></i>蓝框 = 路人　·　框上 #数字 是追踪编号，同一人应保持同一个编号
+          <i class="swatch" style="background:#3d7fbf"></i>蓝框 = 路人　·　框按人体轮廓描边，四角标记只作定位，不再把背景圈进去　·　框上 #数字 是追踪编号，同一人应保持同一个编号
         </span>
       </div>
     </div>
@@ -175,14 +180,20 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
     <input type="file" id="fileReg" accept="image/jpeg,image/png,image/bmp,image/webp,image/*" multiple hidden>
     <div class="reg-actions">
       <button class="btn primary" id="btnUploadReg">＋ 上传注册人员照片</button>
+      <input class="reg-person" id="regPerson" type="text" maxlength="24"
+             placeholder="人员编号（可选，如 s08）"
+             title="一次多选同一个人的照片时填这里，可避免被拆成多个人；留空则按文件名前缀分组">
       <button class="btn ghost" id="btnRebuild">用现有注册照重建注册库</button>
     </div>
-    <p class="up-hint">注册请上传正面、背面、侧面图；同一人请用相同前缀命名（如 s05_front / s05_back / s05_side），只有正面照用于建人脸模板。</p>
+    <p class="up-hint">注册请上传正面、背面、侧面图；<b>一次选同一个人的几张照片时，在右边填上人员编号</b>（如 s08），或用相同文件名前缀（s05_front / s05_back / s05_side），否则会被当成不同人。<b>推荐角度：平视正面 ±15° 最佳，左右偏转不超过 30°</b>，人脸 ≥ 80×80 像素、平视、五官无遮挡、光线均匀，并尽量与打卡机位一致；背面照仅存档，大侧脸 / 低头 / 遮脸会检不到脸。</p>
     <div class="status" id="regMsg" style="margin-top:4px"></div>
     <p class="foot">
-      <b>识别口径：</b>注册库只用 4 张<b>正面照</b>建人脸模板 —— 背面照没有脸，检测器会把背景误检成脸，
-      实测会污染特征，所以排除。视频里对每个追踪框的上半身做 YuNet 人脸检测 + SFace 128 维特征，
-      cosine 相似度 ≥ 0.55、且比第二名高出 0.10 以上、并累计命中 2 帧，才判为登记人员（红框）；
+      <b>识别口径：</b>每人以「人脸最清晰的一张」作锚点，其余照片须与本人 cosine ≥ 0.36 才收为独立模板
+      —— 自动剔除背景误检的假脸、别人的照片、以及角度过大的照片，避免把本人特征带偏；
+      多模板比对取最高分，<b>不取均值</b>（均值会让不同姿态互相抵消）。背面照没有脸，只存档不参与识别；
+      人脸短边 &lt; 40px 的照片拒收，小脸模板要求相似度再高 0.10（更不容易误认）。
+      视频里对每个追踪框的上半身做 YuNet 检测 + SFace 128 维特征，
+      cosine ≥ 0.55、且比第二名高出 0.10 以上、并累计命中 2 帧，才判为登记人员（红框）；
       其余一律是路人（蓝框）。<b>检不到脸 / 分数不够 = 路人，绝不硬认。</b>
     </p>
   </div>

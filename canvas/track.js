@@ -5,6 +5,14 @@ const S = { job: '', frames: 0, idx: 0, timer: null, playing: false, info: null 
 function status(t) { $('statusText').textContent = t; }
 function setBar(p) { $('barFill').style.width = Math.max(0, Math.min(100, p)) + '%'; }
 
+function renderGallery(view, disk) {
+  $('galCount').textContent = `（${view.length} 人 · 已保存 ${disk || 0} 张照片）`;
+  $('galList').innerHTML = view.length
+    ? view.map(g => `<span class="pill" style="margin:0 6px 6px 0">${g.name} · ${g.photos} 张模板` +
+        `${g.saved > g.photos ? `（共存 ${g.saved} 张）` : ''}</span>`).join('')
+    : '还没有注册人员。点「上传注册人员照片」，或用现有注册照重建注册库。';
+}
+
 async function loadInfo() {
   const r = await (await fetch('/api/track/info')).json();
   S.info = r;
@@ -26,10 +34,7 @@ async function loadInfo() {
     `人员检测用 COCO 预训练的 yolo26n-seg，追踪用自写 IOU 追踪器；` +
     `重复框已在「检测 / 建轨 / 输出」三处去重。全程离线、无需联网。`;
 
-  $('galCount').textContent = `（${r.gallery.length} 人）`;
-  $('galList').innerHTML = r.gallery.length
-    ? r.gallery.map(g => `<span class="pill" style="margin:0 6px 6px 0">${g.name} · ${g.photos} 张</span>`).join('')
-    : '还没有注册人员。点「上传注册人员照片」，或用现有注册照重建注册库。';
+  renderGallery(r.gallery, r.disk_photos);
 }
 
 async function uploadReg(e) {
@@ -38,18 +43,27 @@ async function uploadReg(e) {
   const btn = $('btnUploadReg');
   const msg = $('regMsg');
   btn.disabled = true;
-  msg.textContent = `正在上传 ${fs.length} 张注册照并重建人脸库……`;
+  msg.textContent = `正在上传 ${fs.length} 张注册照，逐张检测人脸并重建注册库……`;
+  $('galCount').textContent = `（正在保存 ${fs.length} 张……）`;
   const fd = new FormData();
   fs.forEach(f => fd.append('files', f));
+  const who = ($('regPerson').value || '').trim();
+  if (who) fd.append('person', who);   // 一次多选同一人时显式指定，避免被按文件名拆成多个人
   try {
     const r = await (await fetch('/api/track/register_upload', {
       method: 'POST', body: fd,
     })).json();
     if (!r.ok) throw new Error(r.message);
-    msg.textContent = r.message;   // 后端会回报「几人 / 几张正面照 / 是否检出人脸」
-    await loadInfo();              // 刷新上方人数与人员标签
+    // 直接用返回值渲染，不再等一次 /info（视频列表不用变，避免计数"延迟"）
+    renderGallery(r.gallery || [], r.disk_photos);
+    let txt = r.message;
+    if (r.rejected && r.rejected.length) {
+      txt += '\n未进模板：' + r.rejected.map(x => `${x.file} — ${x.reason}`).join('；');
+    }
+    msg.textContent = txt;
   } catch (err) {
     msg.textContent = '上传失败：' + err.message;
+    await loadInfo();
   } finally {
     btn.disabled = false;
     e.target.value = '';
@@ -197,8 +211,13 @@ async function rebuild() {
     body: JSON.stringify({ dir: 'D:/sports_checkin/registered' }),
   })).json();
   if (!r.ok) { status('重建失败：' + r.message); return; }
-  status(`注册库已重建：${r.count} 人 / ${r.photos} 张照片（${r.mode}）`);
-  await loadInfo();
+  renderGallery(r.gallery || [], r.disk_photos);
+  status(`注册库已重建：${r.count} 人 / ${r.photos} 张有效模板` +
+         `（磁盘共 ${r.disk_photos} 张，${r.mode}）`);
+  if (r.rejected && r.rejected.length) {
+    $('regMsg').textContent = `${r.rejected.length} 张未进模板：` +
+      r.rejected.map(x => `${x.file} — ${x.reason}`).join('；');
+  }
 }
 
 function bind() {

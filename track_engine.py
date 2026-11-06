@@ -41,6 +41,14 @@ FACE_MARGIN = 0.10          # 第一名必须比第二名高出这么多，避�
 APPEARANCE_THRESHOLD = 0.75
 VOTE_MIN = 2                # 累计命中 2 帧才锁定；阈值 0.55 + gap 0.10 已足够严，2 帧可兼顾抽帧场景
 
+# 注册照建库：SFace 官方同人 cosine 阈值 0.363，低于此值的照片极可能是
+# 误检的假脸、另一个人、或姿态/光线差太大的照片，混进模板会把本人特征带偏。
+REGISTER_MIN_SCORE = 0.45   # 注册照人脸置信度（视频帧用 0.40，注册照略严）
+SAME_PERSON_MIN = 0.36      # 与本人锚点的最低相似度
+REGISTER_MIN_FACE = 40      # 人脸短边最低像素；低于此值的"模板"其实是背景纹理
+LOW_QUALITY_PENALTY = 0.10  # 小脸模板要求比正常阈值再高这么多，防止误认
+BACK_KEYS = ("back", "背面", "后脑", "背影")
+
 # OpenCV 是 BGR，不是 RGB
 COLOR_REGISTERED = (60, 60, 235)    # 红：数据里提供的注册人员
 COLOR_PASSERBY = (235, 150, 60)     # 蓝：路人 / 未匹配上
@@ -70,10 +78,13 @@ class FaceIdentity:
         self.rec = cv2.FaceRecognizerSF_create(str(SFACE), "")
         self._size = None
 
-    def feat(self, bgr, box=None, up=1.0, min_score=0.40):
+    def feat(self, bgr, box=None, up=1.0, min_score=0.40,
+             return_score=False, return_meta=False):
         """从整图或 person 框上半身里找最可信的人脸，返回 128 维特征或 None。
 
         up > 1 时先把局部放大 —— 远景里 20~40px 的小脸放大后 YuNet 才检得出。
+        return_score=True  → (特征, 人脸置信度)
+        return_meta=True   → (特征, 人脸置信度, 脸宽, 脸高)，建库时判断模板质量。
         """
         if box is not None:
             x1, y1, x2, y2 = [int(v) for v in box]
@@ -82,24 +93,34 @@ class FaceIdentity:
             x2, y2 = min(w, x2), min(h, y2)
             y2 = min(y2, y1 + max(1, int((y2 - y1) * 0.65)))   # 人脸只在上半身
             bgr = bgr[y1:y2, x1:x2]
+        if return_meta:
+            empty = (None, 0.0, 0.0, 0.0)
+        elif return_score:
+            empty = (None, 0.0)
+        else:
+            empty = None
         if bgr is None or bgr.size == 0:
-            return None
+            return empty
         if up != 1.0:
             bgr = cv2.resize(bgr, None, fx=up, fy=up, interpolation=cv2.INTER_CUBIC)
         h, w = bgr.shape[:2]
         if h < 24 or w < 24:
-            return None
+            return empty
         if self._size != (w, h):
             self.det.setInputSize((w, h))
             self._size = (w, h)
         _, faces = self.det.detect(bgr)
         if faces is None or len(faces) == 0:
-            return None
+            return empty
         f = max(faces, key=lambda r: r[2] * r[3])
-        if float(f[-1]) < min_score:
-            return None
+        score = float(f[-1])
+        if score < min_score:
+            return empty
         aligned = self.rec.alignCrop(bgr, f)
-        return np.asarray(self.rec.feature(aligned), dtype=np.float32).ravel()
+        v = np.asarray(self.rec.feature(aligned), dtype=np.float32).ravel()
+        if return_meta:
+            return v, score, float(f[2]), float(f[3])
+        return (v, score) if return_score else v
 
     @staticmethod
     def sim(a, b):
@@ -138,48 +159,111 @@ def appearance_sim(a, b):
 
 # ---------------------------------------------------------------- 注册库
 def build_gallery(images_dir, model=None):
-    """用提供的注册照建库。
+    """用注册照建库：多角度都尝试，但必须通过与本人锚点的一致性校验。
 
-    人脸模式只收正面照：背面照里没有脸，YuNet 检出来的都是背景误检
-    （实测 s04_back 会检出一个假脸，把本人特征带偏），必须排除。
-    每个人保留全部有效模板，比对时取最高分，比"取均值"更稳。
+    为什么改：旧版只认文件名里的 front，用户按提示传的侧面/其他角度全被丢；
+    而且误检的"假脸"和不属于本人的照片会混进模板再取均值，把本人特征带偏 ——
+    实测同一人的两张正面照互相只有 0.15~0.23（同人阈值 0.363），
+    一张背面误检照甚至更像另一个人（0.688）。
+
+    现在的规则：
+      ① 背面照一律排除（没有脸，YuNet 检到的都是背景误检），仅存档
+      ② 每人挑人脸置信度最高的照片作锚点
+      ③ 其余照片与锚点 cosine >= SAME_PERSON_MIN 才收为独立模板
+      ④ 多模板比对取最高分，绝不取均值（均值会让不同姿态互相抵消）
     """
     images_dir = Path(images_dir)
     mode = identity_mode()
     fi = FaceIdentity() if mode == "face" else None
-    groups = {}
-    for p in sorted(images_dir.glob("*")):
-        if p.suffix.lower() not in {".jpg", ".jpeg", ".png", ".bmp"}:
-            continue
-        if mode == "face" and "front" not in p.stem.lower():
+    exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    files = sorted(p for p in images_dir.glob("*") if p.suffix.lower() in exts)
+    rejected = []
+    all_by_person = {}
+    candidates = {}
+
+    for p in files:
+        stem = p.stem.lower()
+        person = p.stem.split("_")[0]
+        all_by_person.setdefault(person, []).append(p.name)
+        is_back = any(k in stem for k in BACK_KEYS)
+        if mode == "face" and is_back:
+            rejected.append({"file": p.name, "reason": "背面照仅存档（没有人脸）"})
             continue
         bgr = cv2.imread(str(p))
         if bgr is None:
+            rejected.append({"file": p.name, "reason": "图片打不开"})
             continue
-        box = None
-        if mode == "appearance" and model is not None:
-            dets = detect_persons(model, bgr, conf=0.25)
-            if dets:
-                box = max(dets, key=lambda d: (d[2] - d[0]) * (d[3] - d[1]))[:4]
-        f = (fi.feat(bgr, None, up=1.0, min_score=0.60) if mode == "face"
-             else appearance_feat(bgr, box))
-        if f is None:
-            continue
-        person = p.stem.split("_")[0]
-        groups.setdefault(person, []).append((p.name, np.asarray(f, dtype=np.float32).ravel()))
+        if mode == "face":
+            f, score, fw, fh = fi.feat(bgr, None, up=1.0,
+                                       min_score=REGISTER_MIN_SCORE,
+                                       return_meta=True)
+            if f is None:   # 小脸放大再试一次，尺寸要还原回原图
+                f, score, fw, fh = fi.feat(bgr, None, up=2.0,
+                                           min_score=0.40, return_meta=True)
+                fw, fh = fw / 2.0, fh / 2.0
+            if f is None:
+                rejected.append({"file": p.name, "reason": "没检出清晰人脸"})
+                continue
+            short = min(fw, fh)
+            if short < REGISTER_MIN_FACE:
+                rejected.append({
+                    "file": p.name,
+                    "reason": f"人脸仅 {int(short)}px（需 ≥{REGISTER_MIN_FACE}px），"
+                              f"请重拍平视近景正面照"})
+                continue
+            # 远景小脸的"特征"往往只是背景纹理，和别人的假脸会虚高相似，
+            # 这种模板必须要求更高的相似度才敢判本人。
+            quality = "high" if (score >= 0.85 and short >= 60) else "low"
+        else:
+            box = None
+            if model is not None:
+                dets = detect_persons(model, bgr, conf=0.25)
+                if dets:
+                    box = max(dets, key=lambda d: (d[2] - d[0]) * (d[3] - d[1]))[:4]
+            f = appearance_feat(bgr, box)
+            score, quality = 1.0, "low"
+            if f is None:
+                rejected.append({"file": p.name, "reason": "提不到特征"})
+                continue
+        candidates.setdefault(person, []).append(
+            {"file": p.name, "feat": np.asarray(f, dtype=np.float32).ravel(),
+             "score": float(score), "quality": quality})
 
     items = []
-    for person, feats in sorted(groups.items()):
-        arrs = [f for _, f in feats]
-        v = np.mean(np.stack(arrs), axis=0)
-        v = v / (np.linalg.norm(v) + 1e-8)
-        items.append({"name": person, "files": [n for n, _ in feats],
-                      "feat": v.tolist(), "feats": [a.tolist() for a in arrs],
-                      "mode": mode})
+    for person, cands in sorted(candidates.items()):
+        cands.sort(key=lambda c: c["score"], reverse=True)
+        anchor = cands[0]
+        kept = [anchor]
+        for c in cands[1:]:
+            s = (FaceIdentity.sim(anchor["feat"], c["feat"]) if mode == "face"
+                 else appearance_sim(anchor["feat"], c["feat"]))
+            if s >= SAME_PERSON_MIN:
+                kept.append(c)
+            else:
+                rejected.append({"file": c["file"],
+                                 "reason": f"与 {person} 正面照不像（{s:.2f}），"
+                                           f"可能是别人、假脸或角度过大"})
+        arrs = [c["feat"] for c in kept]
+        items.append({
+            "name": person,
+            "files": [c["file"] for c in kept],       # 真正进模板的照片
+            "all_files": all_by_person.get(person, []),  # 磁盘上该人全部照片
+            "anchor": anchor["file"],
+            "quality": ("high" if any(c["quality"] == "high" for c in kept)
+                        else "low"),
+            "feat": anchor["feat"].tolist(),           # 主模板 = 最清晰那张，不取均值
+            "feats": [a.tolist() for a in arrs],
+            "mode": mode,
+        })
+
     GALLERY_FILE.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
-    return {"mode": mode, "count": len(items),
-            "names": [i["name"] for i in items],
-            "photos": sum(len(i["files"]) for i in items)}
+    return {
+        "mode": mode, "count": len(items),
+        "names": [i["name"] for i in items],
+        "photos": sum(len(i["files"]) for i in items),   # 有效模板数
+        "disk_photos": len(files),                       # 磁盘实际照片数
+        "rejected": rejected,
+    }
 
 
 def load_gallery():
@@ -207,11 +291,14 @@ def match_identity(feat, gallery, mode, threshold, margin=FACE_MARGIN):
     for g in gallery:
         templates = g.get("feats") or [g["feat"]]
         s = max(sim(feat, np.asarray(t, dtype=np.float32)) for t in templates)
-        scored.append((s, g["name"]))
-    scored.sort(reverse=True)
-    best, name = scored[0]
+        # 远景小脸模板要与假脸拉开更大距离才敢认，否则宁可判路人
+        req = threshold + (LOW_QUALITY_PENALTY
+                           if g.get("quality") == "low" else 0.0)
+        scored.append((s, g["name"], s >= req))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best, name, eligible = scored[0]
     second = scored[1][0] if len(scored) > 1 else 0.0
-    if best < threshold or (best - second) < margin:
+    if not eligible or best < threshold or (best - second) < margin:
         return None, best, second
     return name, best, second
 
@@ -296,6 +383,7 @@ class SimpleTracker:
                 t = self.tracks[ti]
                 t["box"] = dets[di][:4]
                 t["conf"] = dets[di][4]
+                t["contour"] = dets[di][5] if len(dets[di]) > 5 else None
                 t["hits"] += 1
                 t["miss"] = 0
                 matched.add(id(t))
@@ -313,6 +401,7 @@ class SimpleTracker:
                     continue
                 self.tracks.append({
                     "id": self.next_id, "box": d[:4], "conf": d[4],
+                    "contour": d[5] if len(d) > 5 else None,
                     "hits": 1, "miss": 0, "name": None, "sim": 0.0,
                     "best_sim": 0.0, "votes": {}, "checked_in": False,
                 })
@@ -332,14 +421,83 @@ class SimpleTracker:
 
 
 # ---------------------------------------------------------------- 检测
-def detect_persons(model, frame, conf):
-    r = model.predict(frame, conf=conf, classes=[0], iou=0.5, verbose=False)[0]
-    out = []
-    if r.boxes is None:
+def _mask_geometry(mask, box, frame_shape):
+    """由实例掩码算「贴轮廓的收紧框 + 轮廓点」；不可靠时返回 None 回退原框。
+
+    YOLO 的检测框是矩形，常把人身边的背景、旁边的人一起包进去。
+    分割掩码才是人的实际形状，用它的最大外轮廓收紧能明显减少多余区域。
+    保护：掩码太碎（只框到半个人）或收紧过头时不采用，宁可用原框。
+    """
+    x1, y1, x2, y2 = [float(v) for v in box]
+    area_box = max(1.0, (x2 - x1) * (y2 - y1))
+    cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return None
+    c = max(cnts, key=cv2.contourArea)
+    if cv2.contourArea(c) < area_box * 0.12:
+        return None
+    bx, by, bw, bh = cv2.boundingRect(c)
+    if bw < (x2 - x1) * 0.35 or bh < (y2 - y1) * 0.35:
+        return None
+    pad = 2
+    H, W = frame_shape[:2]
+    # 收紧框只能是原框的子集；允许向外扩会把框撑大，反而包进更多背景
+    nx1 = max(x1, max(0, bx - pad))
+    ny1 = max(y1, max(0, by - pad))
+    nx2 = min(x2, min(W, bx + bw + pad))
+    ny2 = min(y2, min(H, by + bh + pad))
+    if nx2 <= nx1 or ny2 <= ny1:
+        return None
+    if (nx2 - nx1) * (ny2 - ny1) > area_box:
+        return None
+    contour = cv2.approxPolyDP(c, 2.0, True)
+    if len(contour) < 3:
+        return None
+    return (nx1, ny1, nx2, ny2, contour)
+
+
+def _person_masks(result, frame_shape):
+    """把 masks.data（模型输入分辨率）缩回原图坐标。
+
+    这一步不能省：masks.xy / masks.data 都是 640 输入尺寸下的坐标，
+    直接拿来画会错位（旧项目踩过同一个坑）。
+    """
+    if getattr(result, "masks", None) is None or result.masks.data is None:
+        return []
+    try:
+        from ultralytics.utils import ops
+        m = result.masks.data[None].float()
+        scaled = ops.scale_masks(m, frame_shape[:2])[0]
+        out = []
+        for i in range(scaled.shape[0]):
+            t = scaled[i]
+            arr = t.detach().cpu().numpy() if hasattr(t, "detach") else np.asarray(t)
+            out.append((arr > 0.5).astype(np.uint8))
         return out
-    for b in r.boxes:
-        x1, y1, x2, y2 = b.xyxy[0].tolist()
-        out.append([x1, y1, x2, y2, float(b.conf[0])])
+    except Exception:
+        return []
+
+
+def detect_persons(model, frame, conf, tight=True):
+    """返回 [x1,y1,x2,y2,score,contour]；contour 可能是 None。
+
+    tight=True 时用分割掩码收紧框，并附带轮廓点供画框阶段描边。
+    """
+    r = model.predict(frame, conf=conf, classes=[0], iou=0.5, verbose=False)[0]
+    if r.boxes is None:
+        return []
+    boxes = [b.tolist() for b in r.boxes.xyxy]
+    confs = [float(c) for c in r.boxes.conf]
+    masks = _person_masks(r, frame.shape) if tight else []
+    out = []
+    for i, b in enumerate(boxes):
+        contour = None
+        x1, y1, x2, y2 = b
+        if i < len(masks):
+            geo = _mask_geometry(masks[i], b, frame.shape)
+            if geo is not None:
+                x1, y1, x2, y2, contour = geo
+        out.append([x1, y1, x2, y2, confs[i], contour])
     return dedup_boxes(out)
 
 
@@ -464,7 +622,8 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
                                 t["checked_in"] = True
                 if t["name"]:
                     id_names[t["id"]] = (t["name"], float(t.get("sim", 0)))
-                to_draw.append((t["id"], t["box"], t["name"], t["sim"]))
+                to_draw.append((t["id"], t["box"], t["name"], t["sim"],
+                                t.get("contour")))
             last_boxes = to_draw
         else:
             to_draw = last_boxes
@@ -475,10 +634,32 @@ def process_video(video_path, job_id, model, gallery=None, stride=3, conf=0.35,
                     overlap_pairs += 1
 
         vis = frame.copy()
-        for tid, box, name, sim in to_draw:
+        # 只给人形轮廓内部上淡色：矩形四角的背景不再被"框进去"，
+        # 视觉上框就是贴着人的形状，多余区域一眼能看出不属于目标。
+        overlay = vis.copy()
+        has_contour = False
+        for item in to_draw:
+            if item[4] is not None:
+                cv2.fillPoly(overlay, [item[4]],
+                             COLOR_REGISTERED if item[2] else COLOR_PASSERBY)
+                has_contour = True
+        if has_contour:
+            vis = cv2.addWeighted(overlay, 0.14, vis, 0.86, 0)
+
+        for tid, box, name, sim, contour in to_draw:
             x1, y1, x2, y2 = [int(v) for v in box]
             color = COLOR_REGISTERED if name else COLOR_PASSERBY
-            cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
+            if contour is not None:
+                cv2.polylines(vis, [contour], True, color, 2, cv2.LINE_AA)
+                # 用四角标记代替完整矩形：保留"框"的定位感，
+                # 又不会把人形轮廓以外的背景（桌脚、旁边的人）圈进框里
+                L = max(10, min(26, int((x2 - x1) * 0.18)))
+                for cx, cy, sx, sy in ((x1, y1, 1, 1), (x2, y1, -1, 1),
+                                       (x1, y2, 1, -1), (x2, y2, -1, -1)):
+                    cv2.line(vis, (cx, cy), (cx + sx * L, cy), color, 2, cv2.LINE_AA)
+                    cv2.line(vis, (cx, cy), (cx, cy + sy * L), color, 2, cv2.LINE_AA)
+            else:
+                cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
             label = f"#{tid}  {name} {sim:.2f}" if name else f"#{tid}  路人"
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
             cv2.rectangle(vis, (x1, max(0, y1 - th - 8)), (x1 + tw + 8, y1), color, -1)
