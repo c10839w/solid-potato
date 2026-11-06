@@ -608,6 +608,8 @@ def api_track_upload():
     if f is None or not f.filename:
         return jsonify({"ok": False, "message": "没有收到文件"}), 400
     stem = re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", Path(f.filename).stem)[:40]
+    if stem.lower().startswith("result"):
+        stem = "upload_" + stem        # 结果视频在列表里会被过滤掉，避免上传后"看不到"
     dst = T.OUT_ROOT / (stem + ".mp4")
     i = 1
     while dst.exists():
@@ -615,18 +617,40 @@ def api_track_upload():
         i += 1
     f.save(str(dst))
     _video_cache.pop(str(dst), None)
+    # 直接把最新列表一起返回，前端不用再等一次 /info 就能看到并选中刚上传的视频
     return jsonify({"ok": True, "name": dst.name,
-                    "message": f"已上传 {dst.name}"})
+                    "message": f"已上传 {dst.name}",
+                    "videos": list_track_videos()})
 
 
 def _gallery_view():
     """注册库展示数据：photos = 真正进人脸模板的张数，saved = 磁盘上该人照片总数。
 
     之前只显示 photos，用户传了 3 张（正/背/侧）却只看到 1 张，会误以为是延迟。
+    现在额外给前端「正面照 / 全部照片 / 角度 / 是否进模板」，
+    点一下人员编号就能看到这个人的照片，不用去磁盘目录里翻。
     """
+    def angle_of(fn):
+        return _guess_register_angle(Path(fn).stem) or "other"
+
     g = T.load_gallery()
-    view = [{"name": x["name"], "photos": len(x["files"]),
-             "saved": len(x.get("all_files") or x["files"])} for x in g]
+    view = []
+    for x in g:
+        used = list(x.get("files") or [])
+        all_files = list(x.get("all_files") or used)
+        anchor = x.get("anchor") or (used[0] if used else
+                                     (all_files[0] if all_files else ""))
+        fronts = [f for f in all_files if angle_of(f) == "front"]
+        # 优先「已进模板的正面照」；没有就用任意正面照；再没有就用建库锚点
+        front = (next((f for f in fronts if f in used), None)
+                 or (fronts[0] if fronts else anchor))
+        order = {"front": 0, "side": 1, "back": 2, "other": 3}
+        shots = [{"name": f, "angle": angle_of(f), "used": f in used,
+                  "anchor": f == anchor}
+                 for f in sorted(all_files, key=lambda n: (order[angle_of(n)], n))]
+        view.append({"name": x["name"], "photos": len(used),
+                     "saved": len(all_files), "anchor": anchor,
+                     "front": front, "shots": shots})
     folder = track_register_dir()
     disk = sum(1 for p in folder.glob("*") if p.suffix.lower() in REGISTER_IMG_EXTS)
     return view, disk
@@ -644,6 +668,34 @@ def api_track_info():
         "templates": sum(x["photos"] for x in view),
         "videos": list_track_videos(),
     })
+
+
+@app.route("/api/track/photo/<path:name>")
+def api_track_photo(name):
+    """点人员编号看注册照：只放行注册目录里的图片，?w=520 可缩到指定宽度。"""
+    from flask import Response, abort
+    folder = track_register_dir().resolve()
+    p = (folder / Path(name).name).resolve()      # 只取文件名，挡住 ../ 穿越
+    if p.parent != folder or not p.is_file() or p.suffix.lower() not in REGISTER_IMG_EXTS:
+        abort(404)
+    w = request.args.get("w", type=int)
+    if not w:
+        return send_file(str(p), conditional=True)
+    w = max(64, min(1600, w))
+    import cv2
+    import numpy as np
+    # 中文路径 cv2.imread 会静默失败，统一用 imdecode 读字节
+    bgr = cv2.imdecode(np.frombuffer(p.read_bytes(), np.uint8), cv2.IMREAD_COLOR)
+    if bgr is None:
+        abort(404)
+    if bgr.shape[1] > w:
+        s = w / bgr.shape[1]
+        bgr = cv2.resize(bgr, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    if not ok:
+        abort(404)
+    return Response(buf.tobytes(), mimetype="image/jpeg",
+                    headers={"Cache-Control": "max-age=60"})
 
 
 # ---------------------------------------------------------------- 注册照上传

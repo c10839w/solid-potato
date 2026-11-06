@@ -66,7 +66,51 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
 .up-hint { margin: 7px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.65; }
 .up-hint b { color: var(--ink-2); font-weight: 600; }
 #regMsg { white-space: pre-line; }
+
+/* 人员编号：点一下看正面照 */
+.gal-line { line-height: 2.1; }
+.gal-tip { margin: 2px 0 0; font-size: 12px; color: var(--ink-3); }
+.chip {
+  border: 1.5px dashed #a9c9e5; background: var(--blue-l, #e3f0fb);
+  color: #3d6f9e; border-radius: 99px; padding: 5px 13px; margin: 0 6px 6px 0;
+  font: inherit; font-size: 12.5px; cursor: pointer; transition: .15s;
+}
+.chip:hover, .chip:focus-visible { background: #d3e7f8; border-color: #5b93c4; transform: translateY(-1px); outline: none; }
+.chip b { font-family: var(--font-num); font-weight: 600; }
+.chip small { font-size: 11px; color: #7195b5; margin-left: 5px; }
+
+/* 通用折叠块：长说明、逐张原因默认收起 */
+.fold { border: 1.5px dashed var(--line); border-radius: 10px; background: #fffdf9; margin: 8px 0 0; padding: 0 12px; font-size: 12.5px; }
+.fold > summary { cursor: pointer; padding: 8px 2px; color: var(--ink-2); list-style: none; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: '▸'; display: inline-block; margin-right: 7px; color: #a9a094; transition: .15s; }
+.fold[open] > summary { border-bottom: 1px dashed var(--line); }
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold-body { padding: 8px 2px 12px; color: var(--ink-2); line-height: 1.8; }
+.rej-sum { font-size: 12.5px; color: var(--ink-2); line-height: 1.8; margin-top: 6px; }
+.rej-sum i { font-style: normal; display: inline-block; padding: 1px 8px; margin: 0 4px 3px 0; border-radius: 99px; background: #f4eee5; color: #7d7367; }
+.rej-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rej-table td { padding: 5px 8px; border-bottom: 1px dashed var(--line); vertical-align: top; }
+.rej-table td:first-child { white-space: nowrap; font-family: var(--font-num); color: var(--ink-3); }
+.rej-group { font-size: 12px; color: var(--ink-3); margin: 10px 0 2px; }
+
+/* 正面照弹层 */
+.pmodal { position: fixed; inset: 0; z-index: 60; background: rgba(45,40,36,.4); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.pmodal[hidden] { display: none; }
+.pm-card { position: relative; width: min(760px, 94vw); max-height: 88vh; overflow: auto; background: var(--paper, #fffdf8); border: 2px solid #fff; border-radius: 14px; box-shadow: 0 18px 50px rgba(0,0,0,.22); padding: 20px 22px 22px; }
+.pm-x { position: absolute; top: 12px; right: 14px; width: 30px; height: 30px; border: none; border-radius: 50%; background: #f4eee5; color: var(--ink-2); font-size: 17px; line-height: 1; cursor: pointer; }
+.pm-card h3 { margin: 2px 0 4px; font-size: 20px; }
+.pm-meta { font-size: 12.5px; color: var(--ink-3); margin-bottom: 12px; }
+.pm-main { display: grid; grid-template-columns: minmax(0,1fr) 216px; gap: 16px; align-items: start; }
+.pm-photo { display: block; width: auto; max-width: 100%; max-height: 430px; margin: 0 auto; object-fit: contain; background: #f3ede4; border-radius: 10px; }
+.pm-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 430px; overflow: auto; }
+.pm-shot { padding: 0; border: 1.5px dashed var(--line); border-radius: 8px; background: #fff; overflow: hidden; cursor: pointer; font: inherit; font-size: 11px; color: var(--ink-3); }
+.pm-shot.on { border-color: #d2453c; }
+.pm-shot img { display: block; width: 100%; height: 72px; object-fit: cover; }
+.pm-shot span { display: block; padding: 3px 2px; }
+.pm-note { font-size: 12px; color: var(--ink-3); line-height: 1.7; margin: 12px 0 0; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .kvs { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 700px) { .pm-main { grid-template-columns: 1fr; } .pm-shots { grid-template-columns: repeat(4,1fr); } }
 </style>
 </head>
 <body>
@@ -133,7 +177,8 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
       <span class="tape">第二步</span>
       <h2>看结果</h2>
       <div class="verdict" id="verdict">还没有结果。左边点「开始分析」，等它跑完。</div>
-      <div class="foot" id="idHint" style="margin:-8px 0 14px"></div>
+      <div class="foot" id="idHint" style="margin:-8px 0 6px"></div>
+      <div class="foot" id="resultVideo" style="margin:0 0 12px"></div>
       <div class="kvs">
         <div class="kv"><b id="kvFrames">—</b><span>处理帧数</span></div>
         <div class="kv"><b id="kvIds">—</b><span>Track ID 数</span></div>
@@ -161,22 +206,32 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
 
   <div class="card" style="margin-top:18px">
     <span class="tape butter">明细</span>
-    <h2>每个编号追踪了多久</h2>
-    <table>
-      <thead><tr><th>Track ID</th><th>持续帧数</th><th>类别</th><th>识别为</th><th>相似度</th></tr></thead>
-      <tbody id="trackRows"><tr><td colspan="5" class="muted">暂无数据</td></tr></tbody>
-    </table>
-    <h2 style="margin-top:22px">打卡记录</h2>
-    <table>
-      <thead><tr><th>人员</th><th>时间</th><th>出现帧</th><th>相似度</th></tr></thead>
-      <tbody id="checkinRows"><tr><td colspan="4" class="muted">暂无数据</td></tr></tbody>
-    </table>
+    <h2>分析明细 <span class="muted" style="font-size:12px;font-weight:400">（点标题展开，默认收起）</span></h2>
+    <details class="fold" id="foldTracks">
+      <summary>每个编号追踪了多久 <span id="trackSum" class="muted"></span></summary>
+      <div class="fold-body">
+        <table>
+          <thead><tr><th>Track ID</th><th>持续帧数</th><th>类别</th><th>识别为</th><th>相似度</th></tr></thead>
+          <tbody id="trackRows"><tr><td colspan="5" class="muted">暂无数据</td></tr></tbody>
+        </table>
+      </div>
+    </details>
+    <details class="fold" id="foldCheckins" style="margin-top:10px">
+      <summary>打卡记录 <span id="checkinSum" class="muted"></span></summary>
+      <div class="fold-body">
+        <table>
+          <thead><tr><th>人员</th><th>时间</th><th>出现帧</th><th>相似度</th></tr></thead>
+          <tbody id="checkinRows"><tr><td colspan="4" class="muted">暂无数据</td></tr></tbody>
+        </table>
+      </div>
+    </details>
   </div>
 
   <div class="card" style="margin-top:18px">
     <span class="tape mint">注册库</span>
     <h2>已登记的人员 <span id="galCount" class="muted" style="font-size:12px"></span></h2>
-    <div id="galList" class="foot">读取中……</div>
+    <div id="galList" class="gal-line foot">读取中……</div>
+    <p class="gal-tip" id="galTip">点蓝色编号 → 看这个人的正面照（下方明细默认收起，需要时再展开）。</p>
     <input type="file" id="fileReg" accept="image/jpeg,image/png,image/bmp,image/webp,image/*" multiple hidden>
     <div class="reg-actions">
       <button class="btn primary" id="btnUploadReg">＋ 上传注册人员照片</button>
@@ -185,17 +240,43 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
              title="一次多选同一个人的照片时填这里，可避免被拆成多个人；留空则按文件名前缀分组">
       <button class="btn ghost" id="btnRebuild">用现有注册照重建注册库</button>
     </div>
-    <p class="up-hint">注册请上传正面、背面、侧面图；<b>一次选同一个人的几张照片时，在右边填上人员编号</b>（如 s08），或用相同文件名前缀（s05_front / s05_back / s05_side），否则会被当成不同人。<b>推荐角度：平视正面 ±15° 最佳，左右偏转不超过 30°</b>，人脸 ≥ 80×80 像素、平视、五官无遮挡、光线均匀，并尽量与打卡机位一致；背面照仅存档，大侧脸 / 低头 / 遮脸会检不到脸。</p>
-    <div class="status" id="regMsg" style="margin-top:4px"></div>
-    <p class="foot">
-      <b>识别口径：</b>每人以「人脸最清晰的一张」作锚点，其余照片须与本人 cosine ≥ 0.36 才收为独立模板
-      —— 自动剔除背景误检的假脸、别人的照片、以及角度过大的照片，避免把本人特征带偏；
-      多模板比对取最高分，<b>不取均值</b>（均值会让不同姿态互相抵消）。背面照没有脸，只存档不参与识别；
-      人脸短边 &lt; 40px 的照片拒收，小脸模板要求相似度再高 0.10（更不容易误认）。
-      视频里对每个追踪框的上半身做 YuNet 检测 + SFace 128 维特征，
-      cosine ≥ 0.55、且比第二名高出 0.10 以上、并累计命中 2 帧，才判为登记人员（红框）；
-      其余一律是路人（蓝框）。<b>检不到脸 / 分数不够 = 路人，绝不硬认。</b>
-    </p>
+    <p class="up-hint">注册请上传正面、背面、侧面图；<b>一次选同一个人的几张照片时，在右边填上人员编号</b>（如 s08），或用相同文件名前缀（s05_front / s05_back / s05_side），否则会被当成不同人。</p>
+    <details class="fold">
+      <summary>拍摄角度与照片要求（点开看）</summary>
+      <div class="fold-body">
+        <b>推荐角度：平视正面 ±15° 最佳，左右偏转不超过 30°</b>，人脸 ≥ 80×80 像素、
+        平视、五官无遮挡、光线均匀，并尽量与打卡机位一致；背面照仅存档，
+        大侧脸 / 低头 / 遮脸会检不到脸。同一个人换角度认不出，多数是「室内近景摆拍 vs 室外俯拍远景」的机位差，
+        而不是角度本身：重拍时请用最终打卡那个摄像头的高度、距离和光线。每人 3~5 张，一人一次多选。
+      </div>
+    </details>
+    <div class="status" id="regMsg" style="margin-top:8px"></div>
+    <div id="regDetail"></div>
+    <details class="fold" style="margin-top:10px">
+      <summary>识别口径与技术说明（点开看）</summary>
+      <div class="fold-body">
+        每人以「人脸最清晰的一张」作锚点，其余照片须与本人 cosine ≥ 0.36 才收为独立模板
+        —— 自动剔除背景误检的假脸、别人的照片、以及角度过大的照片，避免把本人特征带偏；
+        多模板比对取最高分，<b>不取均值</b>（均值会让不同姿态互相抵消）。背面照没有脸，只存档不参与识别；
+        人脸短边 &lt; 40px 的照片拒收，小脸模板要求相似度再高 0.10（更不容易误认）。
+        视频里对每个追踪框的上半身做 YuNet 检测 + SFace 128 维特征，
+        cosine ≥ 0.55、且比第二名高出 0.10 以上、并累计命中 2 帧，才判为登记人员（红框）；
+        其余一律是路人（蓝框）。<b>检不到脸 / 分数不够 = 路人，绝不硬认。</b>
+      </div>
+    </details>
+  </div>
+</div>
+
+<div class="pmodal" id="personModal" hidden>
+  <div class="pm-card" role="dialog" aria-modal="true" aria-labelledby="pmTitle">
+    <button class="pm-x" id="pmClose" title="关闭" aria-label="关闭">×</button>
+    <h3 id="pmTitle">—</h3>
+    <div class="pm-meta" id="pmMeta"></div>
+    <div class="pm-main">
+      <img class="pm-photo" id="pmPhoto" alt="注册人员正面照" src="">
+      <div class="pm-shots" id="pmShots"></div>
+    </div>
+    <p class="pm-note" id="pmNote"></p>
   </div>
 </div>
 
