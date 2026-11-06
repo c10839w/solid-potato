@@ -186,9 +186,16 @@ def load_gallery():
     if not GALLERY_FILE.exists():
         return []
     try:
-        return json.loads(GALLERY_FILE.read_text(encoding="utf-8"))
+        items = json.loads(GALLERY_FILE.read_text(encoding="utf-8"))
     except Exception:
         return []
+    # 旧版本是 appearance 的颜色直方图，和 SFace 特征一样都是 128 维，
+    # 但含义完全不同；模型切换后若混用会算出无意义的相似度甚至误认。
+    # 宁可当作「还没建库」，让页面上点重建 / 上传注册照重新生成。
+    mode = identity_mode()
+    if items and any(i.get("mode", mode) != mode for i in items):
+        return []
+    return items
 
 
 def match_identity(feat, gallery, mode, threshold, margin=FACE_MARGIN):

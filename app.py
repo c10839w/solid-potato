@@ -631,12 +631,136 @@ def api_track_info():
     })
 
 
+# ---------------------------------------------------------------- 注册照上传
+# 注册照默认沿用之前解包出来的素材目录；别人 clone 仓库时没有 D 盘，
+# 就自动落到项目内的 data/registered（已在 .gitignore 忽略，照片不进仓库）。
+DEFAULT_REGISTER_DIR = Path("D:/sports_checkin/registered")
+REGISTER_ANGLES = (
+    ("front", ("front", "正面", "正脸")),
+    ("back", ("back", "背面", "后脑", "背影")),
+    ("side", ("side", "profile", "侧面", "侧脸")),
+)
+REGISTER_IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+GENERIC_NAMES = {"img", "dsc", "dscn", "photo", "image", "mmexport",
+                 "screenshot", "微信图片", "屏幕截图"}
+
+
+def track_register_dir(override=None):
+    """注册照目录；目录不存在时自动建，保证 clone 后也能直接上传。"""
+    if override:
+        p = Path(override)
+    elif DEFAULT_REGISTER_DIR.is_dir():
+        p = DEFAULT_REGISTER_DIR
+    else:
+        p = ROOT / "data" / "registered"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _guess_register_angle(stem):
+    s = (stem or "").lower()
+    for angle, keys in REGISTER_ANGLES:
+        if any(k in s for k in keys):
+            return angle
+    return None
+
+
+def _clean_person(name):
+    import re
+    s = re.sub(r"[^0-9A-Za-z\u4e00-\u9fa5_-]+", "_", name or "").strip("_-")
+    return s[:24]
+
+
+@app.route("/api/track/register_upload", methods=["POST"])
+def api_track_register_upload():
+    """上传注册人员照片（可多选），自动按「人员_角度」落盘并重建人脸库。
+
+    文件名含 front/back/side 或 正面/背面/侧面 会被识别成角度；
+    没写角度时按这个人还缺哪张补哪张（优先补正面，保证能建出人脸模板）。
+    可传 person 字段显式指定人员编号；不传则从文件名公共前缀推断，
+    推断不出来自动分配 s05、s06……与现有注册库命名保持一致。
+    照片统一存成 jpg，避免 webp / 中文名 / 透明通道导致建库时漏读。
+    """
+    import re
+    import cv2
+    import numpy as np
+
+    files = [f for f in (request.files.getlist("files") or request.files.getlist("file"))
+             if f and f.filename]
+    if not files:
+        return jsonify({"ok": False, "message": "没有收到照片"}), 400
+
+    folder = track_register_dir(request.form.get("dir"))
+    person = _clean_person(request.form.get("person"))
+    if not person:
+        guesses = []
+        for f in files:
+            base = Path(f.filename).stem
+            for _, keys in REGISTER_ANGLES:
+                for k in keys:
+                    base = re.sub(re.escape(k), "", base, flags=re.I)
+            base = re.split(r"[_\-\s]", base.strip("_- "), maxsplit=1)[0]
+            guesses.append(_clean_person(base))
+        if (len(set(guesses)) == 1 and guesses[0]
+                and len(guesses[0]) <= 12
+                and guesses[0].lower() not in GENERIC_NAMES):
+            person = guesses[0]
+    if not person:
+        used = [int(m.group(1)) for p in folder.glob("s[0-9][0-9]_*")
+                for m in [re.match(r"s(\d+)_", p.stem)] if m]
+        person = "s%02d" % (max(used + [4]) + 1)
+
+    saved, skipped = [], []
+    for f in files[:20]:
+        stem = Path(f.filename).stem
+        angle = _guess_register_angle(stem)
+        if angle is None:
+            for a in ("front", "back", "side"):
+                if not (folder / f"{person}_{a}.jpg").exists():
+                    angle = a
+                    break
+            angle = angle or "front"
+        if Path(f.filename).suffix.lower() not in REGISTER_IMG_EXTS:
+            skipped.append(f.filename + "（不是图片）")
+            continue
+        raw = f.read()
+        if len(raw) > 25 * 1024 * 1024:
+            skipped.append(f.filename + "（超过 25MB）")
+            continue
+        arr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            skipped.append(f.filename + "（打不开）")
+            continue
+        dst = folder / f"{person}_{angle}.jpg"
+        i = 2
+        while dst.exists():
+            dst = folder / f"{person}_{angle}_{i}.jpg"
+            i += 1
+        cv2.imwrite(str(dst), arr, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        saved.append({"name": dst.name, "angle": angle})
+
+    if not saved:
+        return jsonify({"ok": False, "message": "没有有效照片；" + "、".join(skipped)}), 400
+
+    info = T.build_gallery(str(folder), get_track_model())
+    msg = (f"已保存 {len(saved)} 张（{person}），注册库现有 {info['count']} 人 / "
+           f"{info['photos']} 张正面照；重新点「开始分析」即可看到新人员的红框")
+    if person not in info["names"]:
+        msg += "。注意：这个人还没进人脸模板，请补一张清晰的正面照"
+    if skipped:
+        msg += "。跳过：" + "、".join(skipped)
+    if T.get_state()["running"]:
+        msg += "。当前有分析在跑，新注册库从下一次分析开始生效"
+    return jsonify({"ok": True, "message": msg, "person": person,
+                    "saved": saved, "skipped": skipped, **info})
+
+
 @app.route("/api/track/register", methods=["POST"])
 def api_track_register():
     d = request.get_json(force=True) or {}
-    folder = d.get("dir") or "D:/sports_checkin/registered"
+    folder = track_register_dir(d.get("dir"))
     try:
-        info = T.build_gallery(folder, get_track_model())
+        info = T.build_gallery(str(folder), get_track_model())
         return jsonify({"ok": True, **info})
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)}), 400

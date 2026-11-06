@@ -29,7 +29,31 @@ async function loadInfo() {
   $('galCount').textContent = `（${r.gallery.length} 人）`;
   $('galList').innerHTML = r.gallery.length
     ? r.gallery.map(g => `<span class="pill" style="margin:0 6px 6px 0">${g.name} · ${g.photos} 张</span>`).join('')
-    : '还没有注册人员。点下面按钮，用现有 7 张注册照建库。';
+    : '还没有注册人员。点「上传注册人员照片」，或用现有注册照重建注册库。';
+}
+
+async function uploadReg(e) {
+  const fs = Array.from(e.target.files || []);
+  if (!fs.length) return;
+  const btn = $('btnUploadReg');
+  const msg = $('regMsg');
+  btn.disabled = true;
+  msg.textContent = `正在上传 ${fs.length} 张注册照并重建人脸库……`;
+  const fd = new FormData();
+  fs.forEach(f => fd.append('files', f));
+  try {
+    const r = await (await fetch('/api/track/register_upload', {
+      method: 'POST', body: fd,
+    })).json();
+    if (!r.ok) throw new Error(r.message);
+    msg.textContent = r.message;   // 后端会回报「几人 / 几张正面照 / 是否检出人脸」
+    await loadInfo();              // 刷新上方人数与人员标签
+  } catch (err) {
+    msg.textContent = '上传失败：' + err.message;
+  } finally {
+    btn.disabled = false;
+    e.target.value = '';
+  }
 }
 
 async function uploadVideo(e) {
@@ -183,6 +207,8 @@ function bind() {
   $('fileVideo').addEventListener('change', uploadVideo);
   $('btnPlay').addEventListener('click', togglePlay);
   $('btnRebuild').addEventListener('click', rebuild);
+  $('btnUploadReg').addEventListener('click', () => $('fileReg').click());
+  $('fileReg').addEventListener('change', uploadReg);
   $('frameRange').addEventListener('input', e => { stopPlay(); showFrame(+e.target.value); });
 }
 

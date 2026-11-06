@@ -32,6 +32,9 @@ dataset/
 # 人员打卡：逐帧 JPEG + 结果 mp4（164 MB，随时可重新生成）
 data/track/
 
+# 页面上传的注册人员照片（含人脸，属个人隐私，不进仓库）
+data/registered/
+
 # 交付打包产物（体积大，单独发送给评委）
 dist/
 

@@ -58,6 +58,9 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
 .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 3px; }
 .foot { margin-top: 18px; font-size: 12.5px; color: var(--ink-3); line-height: 1.8; }
 .foot b { color: var(--ink-2); }
+.reg-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+/* 按钮下方的一行说明：比按钮文字淡一档，不抢主操作 */
+.up-hint { margin: 7px 0 0; font-size: 12px; color: var(--ink-3); line-height: 1.65; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .kvs { grid-template-columns: repeat(2,1fr); } }
 </style>
 </head>
@@ -169,11 +172,17 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
     <span class="tape mint">注册库</span>
     <h2>已登记的人员 <span id="galCount" class="muted" style="font-size:12px"></span></h2>
     <div id="galList" class="foot">读取中……</div>
-    <div style="margin-top:12px"><button class="btn ghost" id="btnRebuild">用现有注册照重建注册库</button></div>
+    <input type="file" id="fileReg" accept="image/jpeg,image/png,image/bmp,image/webp,image/*" multiple hidden>
+    <div class="reg-actions">
+      <button class="btn primary" id="btnUploadReg">＋ 上传注册人员照片</button>
+      <button class="btn ghost" id="btnRebuild">用现有注册照重建注册库</button>
+    </div>
+    <p class="up-hint">注册请上传正面、背面、侧面图；同一人请用相同前缀命名（如 s05_front / s05_back / s05_side），只有正面照用于建人脸模板。</p>
+    <div class="status" id="regMsg" style="margin-top:4px"></div>
     <p class="foot">
       <b>识别口径：</b>注册库只用 4 张<b>正面照</b>建人脸模板 —— 背面照没有脸，检测器会把背景误检成脸，
       实测会污染特征，所以排除。视频里对每个追踪框的上半身做 YuNet 人脸检测 + SFace 128 维特征，
-      cosine 相似度 ≥ 0.55、且比第二名高出 0.10 以上、并累计命中 3 帧，才判为登记人员（红框）；
+      cosine 相似度 ≥ 0.55、且比第二名高出 0.10 以上、并累计命中 2 帧，才判为登记人员（红框）；
       其余一律是路人（蓝框）。<b>检不到脸 / 分数不够 = 路人，绝不硬认。</b>
     </p>
   </div>
