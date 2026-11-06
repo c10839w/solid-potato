@@ -48,6 +48,8 @@ SAME_PERSON_MIN = 0.36      # 与本人锚点的最低相似度
 REGISTER_MIN_FACE = 40      # 人脸短边最低像素；低于此值的"模板"其实是背景纹理
 LOW_QUALITY_PENALTY = 0.10  # 小脸模板要求比正常阈值再高这么多，防止误认
 BACK_KEYS = ("back", "背面", "后脑", "背影")
+# 「待确认」栏里的照片用这个前缀，只存档、不建模板、不参与识别
+UNSORTED_KEY = "unsorted"
 
 # OpenCV 是 BGR，不是 RGB
 COLOR_REGISTERED = (60, 60, 235)    # 红：数据里提供的注册人员
@@ -185,6 +187,10 @@ def build_gallery(images_dir, model=None):
         stem = p.stem.lower()
         person = p.stem.split("_")[0]
         all_by_person.setdefault(person, []).append(p.name)
+        if person.lower() == UNSORTED_KEY:
+            # 人工修正时先移出的照片：还没确定是谁，绝不能拿去建模板
+            rejected.append({"file": p.name, "reason": "待确认分组（不参与识别）"})
+            continue
         is_back = any(k in stem for k in BACK_KEYS)
         if mode == "face" and is_back:
             rejected.append({"file": p.name, "reason": "背面照仅存档（没有人脸）"})
@@ -227,11 +233,16 @@ def build_gallery(images_dir, model=None):
                 continue
         candidates.setdefault(person, []).append(
             {"file": p.name, "feat": np.asarray(f, dtype=np.float32).ravel(),
-             "score": float(score), "quality": quality})
+             "score": float(score), "quality": quality,
+             "short": float(short) if mode == "face" else 0.0,
+             "is_front": any(k in stem for k in ("front", "正面", "正脸"))})
 
     items = []
     for person, cands in sorted(candidates.items()):
-        cands.sort(key=lambda c: c["score"], reverse=True)
+        # 同一编号里混了人时，先按「人脸最可信」选锚点；置信度相同再优先
+        # 文件名写明 front 的、脸更大的，别让远景假脸抢走主模板位置。
+        cands.sort(key=lambda c: (c["score"], int(c["is_front"]), c["short"]),
+                   reverse=True)
         anchor = cands[0]
         kept = [anchor]
         for c in cands[1:]:
@@ -280,6 +291,88 @@ def load_gallery():
     if items and any(i.get("mode", mode) != mode for i in items):
         return []
     return items
+
+
+def photo_diagnostics(images_dir):
+    """给「人工修正分组」面板用：逐张报告人脸质量 / 与本人锚点相似度 / 是否可疑。
+
+    只把「清晰正面脸 + 与本人锚点 cosine < SAME_PERSON_MIN」标为可疑。
+    背面照、小脸、检不到脸一律只标「仅存档」，不自动判成别人 —— 这些图上
+    YuNet 检到的多是背景假脸，实测跨编号假脸相似度能到 0.65，比真人还高，
+    拿它们做自动聚类会把同一个人的正/背面拆开、把不同人的背景聚到一起。
+    """
+    images_dir = Path(images_dir)
+    gallery = load_gallery()
+    used = {f for g in gallery for f in g.get("files", [])}
+    anchors = {g["name"]: (np.asarray(g["feat"], dtype=np.float32), g.get("anchor"))
+               for g in gallery}
+    fi = FaceIdentity() if identity_mode() == "face" else None
+    exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    out = []
+    for p in sorted(x for x in images_dir.glob("*") if x.suffix.lower() in exts):
+        stem = p.stem.lower()
+        person = p.stem.split("_")[0]
+        is_back = any(k in stem for k in BACK_KEYS)
+        rec = {"name": p.name, "person": person, "face": False, "short": 0,
+               "score": 0.0, "sim": None, "used": p.name in used,
+               "anchor": anchors.get(person, (None, None))[1] == p.name,
+               "unsorted": person.lower() == UNSORTED_KEY,
+               "is_back": is_back, "suspect": False, "label": "仅存档",
+               "suggest": None, "suggest_sim": None, "dup": False,
+               "best": None, "best_sim": None}
+        try:
+            raw = p.read_bytes() if p.is_file() else None
+        except OSError:      # 拖动改名过程中文件可能刚好被移走
+            raw = None
+        bgr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR) if raw else None
+        if bgr is not None and fi is not None:
+            f, sc, fw, fh = fi.feat(bgr, None, up=1.0,
+                                    min_score=REGISTER_MIN_SCORE, return_meta=True)
+            if f is None:   # 小脸放大再试一次，尺寸还原回原图
+                f, sc, fw, fh = fi.feat(bgr, None, up=2.0,
+                                        min_score=0.40, return_meta=True)
+                fw, fh = fw / 2.0, fh / 2.0
+            rec["short"] = round(float(min(fw, fh)), 1)
+            rec["score"] = round(float(sc), 3)
+            rec["face"] = f is not None
+            if f is not None and rec["short"] >= REGISTER_MIN_FACE:
+                # 与每个人的主模板都比一遍：给出「更像谁」的拖拽建议
+                sims = {n: FaceIdentity.sim(a[0], f) for n, a in anchors.items()}
+                if sims:
+                    best = max(sims, key=sims.get)
+                    rec["sim"] = round(sims.get(person, sims[best]), 3)
+                    rec["best"] = best
+                    rec["best_sim"] = round(sims[best], 3)
+                    if best != person and sims[best] >= 0.45:
+                        rec["suggest"] = best
+                        rec["suggest_sim"] = round(sims[best], 3)
+                        rec["dup"] = sims[best] >= 0.98
+                # 只有「脸够大、检测够可信、又不是主模板」的照片才敢标可疑，
+                # 避免把远景假脸 / 小脸误判成另一个人
+                if (not is_back and not rec["anchor"] and rec["score"] >= 0.60
+                        and rec["short"] >= 60 and person in anchors
+                        and sims.get(person, 1.0) < SAME_PERSON_MIN):
+                    rec["suspect"] = True
+        if rec["unsorted"]:
+            rec["label"] = "待确认"
+        elif rec["dup"]:
+            rec["label"] = "与 " + rec["suggest"] + " 的照片重复"
+        elif rec["anchor"]:
+            rec["label"] = "主模板"
+        elif rec["used"]:
+            rec["label"] = "有效模板"
+        elif rec["suspect"]:
+            rec["label"] = "可疑 · 可能不是本人"
+        elif not rec["face"]:
+            rec["label"] = "仅存档 · 没检到脸"
+        elif rec["short"] < REGISTER_MIN_FACE:
+            rec["label"] = "仅存档 · 脸太小"
+        elif is_back:
+            rec["label"] = "仅存档 · 背面"
+        else:
+            rec["label"] = "仅存档 · 与本人不像"
+        out.append(rec)
+    return out
 
 
 def match_identity(feat, gallery, mode, threshold, margin=FACE_MARGIN):

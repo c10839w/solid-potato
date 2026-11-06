@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 const S = {
   job: '', frames: 0, idx: 0, timer: null, playing: false, info: null,
   gallery: [], preferredVideo: '', userPickedVideo: false, pollTries: 0,
+  fix: null, selected: new Set(), dragFiles: [], suspectByPerson: {}, moving: false,
 };
 
 function esc(s) {
@@ -55,8 +56,11 @@ function renderGallery(view, disk) {
   const templates = S.gallery.reduce((a, g) => a + (g.photos || 0), 0);
   $('galCount').textContent = `（${n} 人 · 磁盘已保存 ${disk || 0} 张 · ${templates} 张有效模板）`;
   $('galList').innerHTML = n
-    ? S.gallery.map(g => `<button class="chip" data-name="${esc(g.name)}" title="点开看 ${esc(g.name)} 的正面照">
-        <b>${esc(g.name)}</b><small>${g.photos} 张模板 · 共 ${g.saved} 张</small></button>`).join('')
+    ? S.gallery.map(g => {
+        const warn = S.suspectByPerson[g.name] || 0;
+        return `<button class="chip" data-name="${esc(g.name)}" title="点开看 ${esc(g.name)} 的正面照">
+        <b>${esc(g.name)}</b><small>${g.photos} 张模板 · 共 ${g.saved} 张</small>${warn ? `<small class="chip-warn" title="有 ${warn} 张照片疑似不是本人">⚠${warn}</small>` : ''}</button>`;
+      }).join('')
     : '还没有注册人员。点「上传注册人员照片」，或用现有注册照重建注册库。';
   $('galTip').textContent = n
     ? '点蓝色编号 → 看这个人的正面照；卡片里可切换他 / 她的全部注册照。'
@@ -129,6 +133,218 @@ function renderRejects(rej) {
     <details class="fold"><summary>展开逐张原因（${rej.length} 条）</summary><div class="fold-body">${rows}</div></details>`;
 }
 
+/* ------------------------------------------------ 人工修正分组（拖拽） */
+const UNSORTED = 'unsorted';
+const byNum = (a, b) => String(a).localeCompare(String(b), 'zh-CN', { numeric: true });
+
+function updateSelCount() {
+  $('fixSelCount').textContent = S.selected.size;
+  document.querySelectorAll('.fix-photo').forEach(el =>
+    el.classList.toggle('sel', S.selected.has(el.dataset.file)));
+}
+
+function fixColumn(person, list, g, kind) {
+  const isNew = kind === 'new', isUnsorted = kind === 'unsorted';
+  const title = isNew ? '＋ 新建编号' : (isUnsorted ? '待确认' : person);
+  const count = isNew ? '' :
+    `${list.length} 张${g ? ` · ${g.photos} 模板` : ' · 未进模板'}`;
+  const tiles = isNew
+    ? `<div class="fix-empty" style="padding:34px 6px">把照片拖到这里<br>自动开一个<br>新人员编号<br><b>${esc((S.fix && S.fix.next_person) || '')}</b></div>`
+    : (list.length ? list.map(p => {
+        const cls = ['fix-photo'];
+        if (p.suspect) cls.push('suspect');
+        if (p.dup) cls.push('dup');
+        const badge = p.unsorted ? ['', '待确认']
+          : p.dup ? ['dup', '重复']
+          : p.anchor ? ['ok', '主模板']
+          : p.used ? ['ok', '有效']
+          : p.suspect ? ['warn', '可疑']
+          : ['', '仅存档'];
+        const tip = [p.label, `人脸 ${p.short}px`, p.score ? `置信 ${p.score}` : '',
+                     p.best ? `最像 ${p.best}（${p.best_sim}）` : '',
+                     p.suggest ? `建议移到 ${p.suggest}` : ''].filter(Boolean).join('；');
+        const label = p.suggest
+          ? `→ ${p.suggest} ${p.suggest_sim}` : (p.suspect ? '⚠ 可能不是本人' : p.label);
+        return `<button type="button" class="${cls.join(' ')}" draggable="true"
+            data-file="${esc(p.name)}" title="${esc(p.name)}｜${esc(tip)}">
+          <img src="${photoUrl(p.name, 200)}" alt="${esc(p.name)}" loading="lazy" draggable="false">
+          <span class="badge ${badge[0]}">${badge[1]}</span>
+          <span class="cap">${esc(p.name.replace(/\.[^.]+$/, ''))}<br>${esc(label)}</span>
+        </button>`;
+      }).join('') : '<div class="fix-empty">（暂无照片，可把别的编号拖过来）</div>');
+  const look = (!isNew && !isUnsorted && g)
+    ? `<button type="button" class="look" data-look="${esc(person)}">看正面照</button>` : '';
+  return `<div class="fix-col${isNew || isUnsorted ? ' special' : ''}" data-person="${esc(isNew ? '__new__' : isUnsorted ? '__unsorted__' : person)}">
+      <div class="fix-hd"><b>${esc(title)}</b><small>${esc(count)}</small>${look}</div>
+      <div class="fix-tiles">${tiles}</div>
+    </div>`;
+}
+
+function renderFix() {
+  const st = S.fix;
+  if (!st) return;
+  const photos = st.photos || [], gal = st.gallery || [];
+  const byPerson = {};
+  photos.forEach(p => { (byPerson[p.person] = byPerson[p.person] || []).push(p); });
+  const names = [...new Set([...gal.map(g => g.name), ...Object.keys(byPerson)])]
+    .filter(n => n !== UNSORTED).sort(byNum);
+
+  const prev = $('fixTarget').value;
+  $('fixTarget').innerHTML = names.map(n =>
+    `<option value="${esc(n)}">${esc(n)}</option>`).join('') +
+    `<option value="__unsorted__">待确认（不参与识别）</option>` +
+    `<option value="__new__">＋ 新建编号 ${esc(st.next_person || '')}</option>`;
+  if (prev && [...$('fixTarget').options].some(o => o.value === prev)) $('fixTarget').value = prev;
+
+  $('fixCols').innerHTML = names.map(n =>
+    fixColumn(n, byPerson[n] || [], gal.find(g => g.name === n))).join('') +
+    fixColumn(UNSORTED, byPerson[UNSORTED] || [], null, 'unsorted') +
+    fixColumn('', [], null, 'new');
+  updateSelCount();
+}
+
+function applyFixState(r) {
+  S.fix = r;
+  S.selected.clear();
+  S.suspectByPerson = {};
+  (r.photos || []).forEach(p => {
+    if (p.suspect && !p.unsorted)
+      S.suspectByPerson[p.person] = (S.suspectByPerson[p.person] || 0) + 1;
+  });
+  renderGallery(r.gallery || [], r.disk_photos);
+  renderFix();
+  const n = (r.photos || []).length;
+  $('fixSum').textContent = `· ${n} 张照片 / ${(r.gallery || []).length} 人`;
+}
+
+function renderFixRejects(rej) {
+  const box = $('fixReject');
+  if (!rej || !rej.length) { box.innerHTML = ''; return; }
+  const kinds = {};
+  rej.forEach(x => { const k = rejectKind(x.reason); (kinds[k] = kinds[k] || []).push(x); });
+  const bits = Object.keys(kinds).map(k =>
+    `<i>${REJECT_KIND[k].label} ${kinds[k].length} 张</i>`).join('');
+  box.innerHTML = `<div class="rej-sum">当前共 <b>${rej.length} 张</b>未进模板：${bits}
+    <br><span class="muted">背面照 / 远景小脸本来就只存档，属正常；详细逐张原因见上方注册库卡片。</span></div>`;
+}
+
+async function refreshFix() {
+  if (!$('foldFix').open) return;
+  $('fixMsg').textContent = '正在逐张检测人脸，请稍候……';
+  try {
+    const r = await (await fetch('/api/track/register_photos')).json();
+    if (!r.ok) throw new Error(r.message || '读取失败');
+    applyFixState(r);
+    $('fixMsg').textContent = `共 ${(r.photos || []).length} 张 · ` +
+      `${(r.suspects || []).length} 张可疑 · ${(r.duplicates || []).length} 张跨编号重复` +
+      `　（拖动或点选照片即可修正）`;
+    renderFixRejects(null);
+  } catch (e) { $('fixMsg').textContent = '读取失败：' + e.message; }
+}
+
+async function movePhotos(files, to) {
+  // 面板可能残留上一次移动前的文件名，先过滤掉，别拿旧名字去请求
+  const known = new Set(((S.fix && S.fix.photos) || []).map(p => p.name));
+  files = [...new Set(files || [])].filter(f => known.has(f));
+  if (!files.length) {
+    $('fixMsg').textContent = '选中的照片已不在列表里，点「↻ 重新检测」后再操作';
+    return;
+  }
+  if (!to) return;
+  if (S.moving) return;
+  S.moving = true;
+  const label = to === '__new__' ? `新建编号 ${S.fix.next_person || ''}`
+    : to === '__unsorted__' ? '待确认' : to;
+  $('fixMsg').textContent = `正在把 ${files.length} 张移到「${label}」并重建注册库……`;
+  $('btnFixMove').disabled = true;
+  $('btnFixSuspect').disabled = true;
+  try {
+    const r = await (await fetch('/api/track/register_move', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files, to }),
+    })).json();
+    if (!r.ok) throw new Error(r.message || '移动失败');
+    applyFixState(r);
+    $('fixMsg').textContent = r.message + (r.moved && r.moved.length
+      ? `　（移动记录已写入 records/photo_moves.jsonl，可再拖回来）` : '');
+    renderFixRejects(r.rejected);
+    renderRejects(r.rejected);
+  } catch (e) {
+    $('fixMsg').textContent = '移动失败：' + e.message + '（可点「↻ 重新检测」刷新）';
+  } finally {
+    $('btnFixMove').disabled = false;
+    $('btnFixSuspect').disabled = false;
+    S.moving = false;
+  }
+}
+
+function bindFix() {
+  $('btnOpenFix').addEventListener('click', () => {
+    $('foldFix').open = true;
+    $('fixCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('foldFix').addEventListener('toggle', () => { if ($('foldFix').open) refreshFix(); });
+  $('btnFixReload').addEventListener('click', refreshFix);
+  $('btnFixClear').addEventListener('click', () => { S.selected.clear(); updateSelCount(); });
+  $('btnFixMove').addEventListener('click', () =>
+    movePhotos([...S.selected], $('fixTarget').value));
+  $('btnFixSuspect').addEventListener('click', () => {
+    const st = S.fix;
+    if (!st) return;
+    const bad = [...new Set([...(st.suspects || []), ...(st.duplicates || [])])];
+    if (!bad.length) { $('fixMsg').textContent = '没有检出可疑或重复照片，无需移出。'; return; }
+    movePhotos(bad, '__unsorted__');
+  });
+
+  const cols = $('fixCols');
+  cols.addEventListener('click', e => {
+    const look = e.target.closest('[data-look]');
+    if (look) { openPerson(look.dataset.look); return; }
+    const tile = e.target.closest('.fix-photo');
+    if (!tile) return;
+    const f = tile.dataset.file;
+    if (S.selected.has(f)) S.selected.delete(f); else S.selected.add(f);
+    updateSelCount();
+  });
+  cols.addEventListener('dragstart', e => {
+    const tile = e.target.closest('.fix-photo');
+    if (!tile) return;
+    const f = tile.dataset.file;
+    S.dragFiles = S.selected.has(f) && S.selected.size > 1 ? [...S.selected] : [f];
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', S.dragFiles.join('\n')); } catch (_) {}
+  });
+  cols.addEventListener('dragover', e => {
+    const col = e.target.closest('.fix-col');
+    if (!col) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    cols.querySelectorAll('.fix-col.over').forEach(x => { if (x !== col) x.classList.remove('over'); });
+    col.classList.add('over');
+  });
+  cols.addEventListener('dragleave', e => {
+    const col = e.target.closest('.fix-col');
+    if (col && !col.contains(e.relatedTarget)) col.classList.remove('over');
+  });
+  cols.addEventListener('drop', e => {
+    const col = e.target.closest('.fix-col');
+    if (!col) return;
+    e.preventDefault();
+    cols.querySelectorAll('.fix-col.over').forEach(x => x.classList.remove('over'));
+    let files = S.dragFiles;
+    try {
+      const raw = e.dataTransfer.getData('text/plain');
+      if (raw) files = raw.split('\n').filter(Boolean);
+    } catch (_) {}
+    S.dragFiles = [];
+    movePhotos(files, col.dataset.person);
+  });
+  cols.addEventListener('dragend', () => {
+    cols.querySelectorAll('.fix-col.over').forEach(x => x.classList.remove('over'));
+    S.dragFiles = [];
+  });
+}
+
 /* ------------------------------------------------ 上传 / 重建 */
 async function uploadVideo(e) {
   const f = e.target.files && e.target.files[0];
@@ -179,6 +395,7 @@ async function uploadReg(e) {
     if ((r.message || '').includes('当前有分析在跑')) bits.push('新注册库从下一次分析开始生效');
     msg.textContent = bits.join('　·　');
     renderRejects(r.rejected);
+    if ($('foldFix').open) refreshFix();   // 面板开着就同步最新分组，不用手动刷新
   } catch (err) {
     msg.textContent = '上传失败：' + err.message;
     await loadInfo();
@@ -198,6 +415,7 @@ async function rebuild() {
   renderGallery(r.gallery || [], r.disk_photos);
   $('regMsg').textContent = `注册库已重建：${r.count} 人 / ${r.photos} 张有效模板（磁盘共 ${r.disk_photos} 张照片）`;
   renderRejects(r.rejected);
+  if ($('foldFix').open) refreshFix();
   status('注册库已重建。');
 }
 
@@ -332,6 +550,7 @@ function togglePlay() {
 
 /* ------------------------------------------------ 事件绑定 */
 function bind() {
+  bindFix();
   $('btnStart').addEventListener('click', start);
   $('btnUpload').addEventListener('click', () => $('fileVideo').click());
   $('fileVideo').addEventListener('change', uploadVideo);

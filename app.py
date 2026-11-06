@@ -286,7 +286,10 @@ def gallery():
 @app.route("/tracking")
 def tracking_page():
     """人员识别打卡 / 同场景追踪（新加的验证页）"""
-    return send_from_directory(app.static_folder, "track.html")
+    resp = send_from_directory(app.static_folder, "track.html")
+    # 打卡页改动频繁，禁用缓存，避免用户一直看到旧版脚本
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 @app.route("/api/config")
@@ -820,6 +823,8 @@ def api_track_register_upload():
         msg += "。注意：这个人还没进人脸模板，请补一张清晰的正面照"
     if skipped:
         msg += "。跳过：" + "、".join(skipped)
+    if len(saved) > 1 and not request.form.get("person"):
+        msg += "。若这几张不是同一个人，在下方「人工修正分组」里把照片拖到不同编号"
     if T.get_state()["running"]:
         msg += "。当前有分析在跑，新注册库从下一次分析开始生效"
     return jsonify({"ok": True, "message": msg, "person": person,
@@ -838,6 +843,147 @@ def api_track_register():
                         "disk_photos": disk, **info})
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)}), 400
+
+
+# ---------------------------------------------------------------- 人工修正分组
+# 注册照的归属直接由「文件名前缀」决定，所以拖拽修正 = 改前缀 + 重建注册库。
+# 不做全自动人脸聚类：背面 / 远景照检到的多是背景假脸，实测跨人假脸相似度
+# 可达 0.65（比真人还高），自动拆会把同一个人的正背面拆开。
+_register_lock = threading.Lock()
+_photo_meta_cache = {"key": None, "value": None}
+
+
+def _next_person(folder):
+    """给「新建编号」用：找下一个没被占用的 sNN。"""
+    import re
+    used = set()
+    for p in folder.glob("s[0-9][0-9]_*"):
+        m = re.match(r"s(\d+)_", p.stem)
+        if m:
+            used.add(int(m.group(1)))
+    for g in T.load_gallery():
+        m = re.fullmatch(r"s(\d+)", g["name"])
+        if m:
+            used.add(int(m.group(1)))
+    return "s%02d" % (max(list(used) + [0]) + 1)
+
+
+def _register_state(folder, with_photos=True):
+    """面板要用的完整状态；照片诊断较慢，按「文件清单 + 注册库 mtime」缓存。"""
+    view, disk = _gallery_view()
+    state = {"gallery": view, "disk_photos": disk,
+             "next_person": _next_person(folder)}
+    if with_photos:
+        gf = T.GALLERY_FILE
+        # 用户可能正在拖照片改文件名，glob 到 stat 之间文件会被移走；
+        # 单个文件读不到就跳过，不能让整个面板 500。
+        sig = []
+        for p in folder.glob("*"):
+            if p.suffix.lower() not in REGISTER_IMG_EXTS:
+                continue
+            try:
+                st = p.stat()
+                sig.append((p.name, st.st_size, st.st_mtime_ns))
+            except OSError:
+                continue
+        try:
+            gsig = (gf.stat().st_mtime_ns, gf.stat().st_size)
+        except OSError:
+            gsig = (0, 0)
+        key = (tuple(sorted(sig)), gsig)
+        if _photo_meta_cache["key"] != key:
+            _photo_meta_cache["value"] = T.photo_diagnostics(str(folder))
+            _photo_meta_cache["key"] = key
+        state["photos"] = _photo_meta_cache["value"]
+        state["suspects"] = [x["name"] for x in state["photos"] if x["suspect"]]
+        state["duplicates"] = [x["name"] for x in state["photos"]
+                               if x["dup"] and not x["unsorted"]]
+        state["templates"] = sum(g["photos"] for g in view)
+    return state
+
+
+@app.route("/api/track/register_photos")
+def api_track_register_photos():
+    """人工修正面板：每张注册照的编号、角度、人脸质量、与本人相似度、是否可疑。"""
+    # 与移动操作互斥，否则会读到「改到一半」的目录
+    with _register_lock:
+        return jsonify({"ok": True, **_register_state(track_register_dir())})
+
+
+@app.route("/api/track/register_move", methods=["POST"])
+def api_track_register_move():
+    """把照片拖到另一个编号：物理重命名前缀 → 重建人脸库 → 返回最新状态。
+
+    to 可以是现成编号、"__new__"（自动开 sNN）、"__unsorted__"（移出到待确认）。
+    只处理注册目录内的合法图片，挡住 ../ 穿越；每次移动写 records/photo_moves.jsonl 便于回溯。
+    """
+    d = request.get_json(force=True) or {}
+    files = d.get("files") or []
+    if isinstance(files, str):
+        files = [files]
+    to = str(d.get("to") or "").strip()
+    if not files or not to:
+        return jsonify({"ok": False, "message": "缺少照片或目标编号"}), 400
+    folder = track_register_dir().resolve()
+    if to == "__new__":
+        to = _next_person(folder)
+    elif to == "__unsorted__":
+        to = T.UNSORTED_KEY
+    else:
+        to = _clean_person(to)
+    if not to:
+        return jsonify({"ok": False, "message": "目标编号不合法"}), 400
+
+    with _register_lock:
+        valid = []
+        for name in files[:30]:
+            p = (folder / Path(str(name)).name).resolve()
+            if (p.parent == folder and p.is_file()
+                    and p.suffix.lower() in REGISTER_IMG_EXTS):
+                valid.append(p)
+        if not valid:
+            return jsonify({"ok": False, "message": "没有找到可移动的照片"}), 404
+        todo = [p for p in valid if p.stem.split("_")[0] != to]
+        if not todo:
+            label = "待确认" if to == T.UNSORTED_KEY else to
+            return jsonify({"ok": True, "moved": [], "to": to,
+                            "message": f"这些照片已经在「{label}」里，无需移动",
+                            **_register_state(folder)})
+
+        log = ROOT / "records" / "photo_moves.jsonl"
+        moved = []
+        for p in todo:
+            angle = _guess_register_angle(p.stem) or "photo"
+            ext = p.suffix.lower() if p.suffix.lower() in REGISTER_IMG_EXTS else ".jpg"
+            dst = folder / f"{to}_{angle}{ext}"
+            i = 2
+            while dst.exists():
+                dst = folder / f"{to}_{angle}_{i}{ext}"
+                i += 1
+            old = p.name
+            try:
+                p.rename(dst)
+            except OSError:
+                continue          # 并发拖动时文件已被别的请求移走，跳过即可
+            moved.append({"from": old, "to": dst.name})
+            try:
+                with log.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps({"time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                         "from": old, "to": dst.name, "person": to},
+                                        ensure_ascii=False) + "\n")
+            except OSError:
+                pass
+        # 人脸模式不需要 YOLO，别为了一次拖拽去加载几十 MB 的分割模型
+        info = T.build_gallery(str(folder))
+        _photo_meta_cache["key"] = None
+        state = _register_state(folder)
+        state["rejected"] = info.get("rejected", [])
+
+    label = "待确认" if to == T.UNSORTED_KEY else to
+    return jsonify({"ok": True, "moved": moved, "to": to,
+                    "message": f"已移动 {len(moved)} 张到「{label}」，注册库重建为 "
+                               f"{info['count']} 人 / {info['photos']} 张有效模板",
+                    **state})
 
 
 @app.route("/api/track/start", methods=["POST"])

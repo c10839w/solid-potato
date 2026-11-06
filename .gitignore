@@ -38,5 +38,6 @@ data/registered/
 # 交付打包产物（体积大，单独发送给评委）
 dist/
 
-# 打卡流水（运行产物）
+# 打卡流水 / 人工拖拽修正流水（运行产物，含用户照片名）
 records/checkin_log.jsonl
+records/photo_moves.jsonl

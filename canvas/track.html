@@ -94,6 +94,46 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
 .rej-table td:first-child { white-space: nowrap; font-family: var(--font-num); color: var(--ink-3); }
 .rej-group { font-size: 12px; color: var(--ink-3); margin: 10px 0 2px; }
 
+/* 人工修正分组：按编号分栏，照片可拖到别的编号 */
+.linkbtn { border: none; background: none; padding: 0; color: #3d7fbf; font: inherit;
+  text-decoration: underline dotted; cursor: pointer; }
+.fix-hint { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); line-height: 1.75; }
+.fix-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.fix-bar .btn { padding: 6px 12px; font-size: 12px; }
+.fix-bar .status { flex: 1; min-width: 160px; }
+.fix-cols { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 12px; align-items: stretch; }
+.fix-col { flex: 0 0 186px; min-height: 150px; border: 1.5px dashed var(--line);
+  border-radius: 10px; background: #fff; padding: 8px; transition: .15s; }
+.fix-col.over { border-color: #d2453c; background: #fff3f1; box-shadow: inset 0 0 0 2px #f6d5d0; }
+.fix-col.special { background: #faf6f0; }
+.fix-hd { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12.5px; }
+.fix-hd b { font-family: var(--font-num); color: #3d6f9e; font-size: 13px; }
+.fix-hd small { color: var(--ink-3); font-size: 11px; }
+.fix-hd .look { margin-left: auto; border: none; background: none; color: #3d7fbf;
+  font-size: 11px; cursor: pointer; padding: 0; }
+.fix-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-height: 76px;
+  align-content: start; }
+.fix-photo { position: relative; border: 1.5px solid transparent; border-radius: 7px;
+  background: #f7f2ea; overflow: hidden; cursor: grab; padding: 0; text-align: left; }
+.fix-photo:hover { border-color: #a9c9e5; }
+.fix-photo.sel { border-color: #d2453c; box-shadow: 0 0 0 2px #f6d5d0; }
+.fix-photo.suspect { outline: 2px solid #e0a03a; }
+.fix-photo.dup { outline: 2px solid #9a7bc4; }
+.fix-photo img { display: block; width: 100%; height: 68px; object-fit: cover; background: #e9e2d8; }
+.fix-photo .cap { display: block; padding: 2px 4px 4px; font-size: 10px; line-height: 1.35;
+  color: var(--ink-3); word-break: break-all; }
+.fix-photo .badge { position: absolute; top: 2px; left: 2px; border-radius: 4px;
+  padding: 0 4px; font-size: 9.5px; color: #fff; background: #7d7367; }
+.fix-photo .badge.ok { background: #3e7d5c; }
+.fix-photo .badge.warn { background: #d2453c; }
+.fix-photo .badge.dup { background: #7b5aa6; }
+.fix-empty { grid-column: 1 / -1; font-size: 11px; color: #b9b0a5; padding: 18px 4px; text-align: center; }
+.fix-move { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px;
+  padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--ink-2); }
+.fix-move select { width: auto; min-width: 190px; padding: 7px 9px; font-size: 12.5px; }
+.fix-move .btn { padding: 7px 16px; font-size: 12.5px; }
+.chip-warn { color: #c0392b !important; }
+
 /* 正面照弹层 */
 .pmodal { position: fixed; inset: 0; z-index: 60; background: rgba(45,40,36,.4); display: flex; align-items: center; justify-content: center; padding: 20px; }
 .pmodal[hidden] { display: none; }
@@ -232,6 +272,7 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
     <h2>已登记的人员 <span id="galCount" class="muted" style="font-size:12px"></span></h2>
     <div id="galList" class="gal-line foot">读取中……</div>
     <p class="gal-tip" id="galTip">点蓝色编号 → 看这个人的正面照（下方明细默认收起，需要时再展开）。</p>
+    <p class="gal-tip">一个编号里混了别人？<button class="linkbtn" id="btnOpenFix" type="button">打开下方「人工修正分组」</button>，把照片拖到正确的编号即可。</p>
     <input type="file" id="fileReg" accept="image/jpeg,image/png,image/bmp,image/webp,image/*" multiple hidden>
     <div class="reg-actions">
       <button class="btn primary" id="btnUploadReg">＋ 上传注册人员照片</button>
@@ -265,6 +306,33 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
       </div>
     </details>
   </div>
+
+  <div class="card" style="margin-top:18px" id="fixCard">
+    <span class="tape pink">人工修正</span>
+    <details class="fold" id="foldFix">
+      <summary style="font-size:13.5px">人工修正分组 <span id="fixSum" class="muted"></span>（点开后可把照片拖到不同编号）</summary>
+      <div class="fold-body">
+        <p class="fix-hint">系统只按<b>文件名前缀</b>分组，不会自动认人：背面 / 远景照检到的多是背景假脸，
+          实测跨编号假脸相似度能到 0.65，比真人还高，所以<b>不做全自动拆分</b>。
+          这里把每张照片都摊开，<b>按住照片拖到目标编号</b>（或点选后在下方选目标再点「移动」）；
+          拖到「＋ 新建编号」会开一个新的人员编号，拖到「待确认」就先不参与识别。
+          移动会改文件名并重建注册库，<b>已经 / 正在跑的分析不受影响，下一次分析生效</b>。</p>
+        <div class="fix-bar">
+          <button class="btn ghost" id="btnFixReload" type="button">↻ 重新检测</button>
+          <button class="btn ghost" id="btnFixSuspect" type="button">把可疑 / 重复照移到「待确认」</button>
+          <span class="status" id="fixMsg">读取中……</span>
+        </div>
+        <div class="fix-cols" id="fixCols"></div>
+        <div class="fix-move">
+          <label for="fixTarget">已选中 <b id="fixSelCount">0</b> 张 → 移动到</label>
+          <select id="fixTarget"></select>
+          <button class="btn primary" id="btnFixMove" type="button">移动</button>
+          <button class="btn ghost" id="btnFixClear" type="button">取消选择</button>
+        </div>
+        <div id="fixReject"></div>
+      </div>
+    </details>
+  </div>
 </div>
 
 <div class="pmodal" id="personModal" hidden>
@@ -280,6 +348,6 @@ th { color: var(--ink-3); font-weight: 500; font-size: 12px; }
   </div>
 </div>
 
-<script src="/static/track.js"></script>
+<script src="/static/track.js?v=20261106b"></script>
 </body>
 </html>
